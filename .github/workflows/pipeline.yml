@@ -10,6 +10,19 @@ on:
         description: Branch or tag of research-dump to run
         type: string
         default: main
+    secrets:
+      S2_API_KEY:
+        required: false
+      OPENALEX_API_KEY:
+        required: false
+      GEMINI_API_KEY:
+        required: false
+      OPENROUTER_API_KEY:
+        required: false
+      TELEGRAM_BOT_TOKEN:
+        required: false
+      TELEGRAM_CHAT_ID:
+        required: false
 
 jobs:
   run:
@@ -36,5 +49,24 @@ jobs:
       - name: Validate data
         run: python code/pipeline/validate.py data
 
+      - name: Collect candidates
+        env:
+          S2_API_KEY: ${{ secrets.S2_API_KEY }}
+          OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
+        run: python code/pipeline/collect.py --data data
+
       # Next stages are added here as they are built:
-      # collect -> screening -> summary -> compare -> notify
+      # screening -> summary -> compare -> notify
+
+      - name: Commit changes to the data repository
+        working-directory: data
+        run: |
+          git config user.name "research-dump bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Weekly run $(date -u +%F)"
+            git push
+          fi

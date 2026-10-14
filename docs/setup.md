@@ -40,7 +40,27 @@ Only the names in `config.json` → `llm.*.key_name` are needed for the LLM part
 
 The token is stored only in your browser and sent only to `api.github.com`. Press **로그아웃** on shared computers.
 
-## 4. Check it
+## 4. Collection settings
+
+`config.json` → `collect`:
+
+| Key | Meaning |
+| --- | --- |
+| `arxiv_categories`, `arxiv_keywords` | arXiv search: any category AND any keyword in the abstract |
+| `s2_citations_of` | `"confirmed"`: new papers citing the papers you confirmed (default) |
+| `openalex_institutions` | OpenAlex institution ids, e.g. `["I1234567890"]` |
+| `openalex_keywords` | keywords for the institution search |
+| `days` | how far back the first run looks |
+
+Find institution ids:
+
+```
+OPENALEX_API_KEY=... python pipeline/collect.py --find-institution "Anthropic"
+```
+
+Each run writes `candidates/<date>.json` and remembers what it has seen in `state/collect.json`, so a paper is proposed once.
+
+## 5. Check it
 
 - Actions tab of your data repository → **weekly** → **Run workflow**. It validates your data.
 - Locally: `python pipeline/validate.py <path-to-your-data-repo>`.

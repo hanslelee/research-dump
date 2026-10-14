@@ -13,6 +13,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python pipeline/validate.py sample-data
+      - run: python -m unittest discover tests
       - name: Sample data must not contain real experiments
         run: |
           if grep -R --include='*.json' -L '\[DEMO\]' sample-data/claims | grep -q .; then

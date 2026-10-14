@@ -34,5 +34,39 @@
   "notify": {
     "telegram": true,
     "hold_days": 3
+  },
+  "collect": {
+    "days": 8,
+    "arxiv_categories": [
+      "cs.CL",
+      "cs.LG",
+      "cs.CV",
+      "cs.AI",
+      "cs.CR"
+    ],
+    "arxiv_keywords": [
+      "jailbreak",
+      "prompt injection",
+      "over-refusal",
+      "refusal",
+      "safety alignment",
+      "guardrail",
+      "red teaming",
+      "hallucination",
+      "calibration",
+      "unlearning",
+      "vision-language model safety",
+      "multimodal safety",
+      "preference optimization"
+    ],
+    "s2_citations_of": "confirmed",
+    "openalex_institutions": [],
+    "openalex_keywords": [
+      "safety",
+      "alignment",
+      "jailbreak",
+      "refusal"
+    ],
+    "max_per_source": 200
   }
 }
