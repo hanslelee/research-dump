@@ -31,7 +31,8 @@ Try the demo: open `viewer/` with the sample data (no token needed).
 
 - [x] Schemas and sample data
 - [x] Viewer: graph, tag-based layout, filters, claim view, detail panel
-- [ ] Buttons: confirm, hold, approve (write back through the GitHub API)
+- [x] Buttons: confirm, hold, approve/reject relations, manual summary, manual relations, claims with versions and experiments (one commit per action through the GitHub API)
+- [x] Import the public reading list into your data repository
 - [ ] Collection: arXiv, Semantic Scholar, OpenAlex
 - [ ] Screening, summary and compare agents
 - [ ] Weekly run and Telegram notifications

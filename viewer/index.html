@@ -22,6 +22,7 @@
           <button id="btn-demo" type="button">데모 데이터</button>
           <button id="btn-connect" type="button">내 저장소 연결</button>
           <button id="btn-logout" type="button" class="quiet">로그아웃</button>
+          <button id="btn-import" type="button" hidden>읽기 목록 가져오기</button>
         </div>
         <p class="hint" id="load-status"></p>
       </section>
@@ -29,6 +30,7 @@
       <section class="panel">
         <h2>Layer 1 · 연구 주제</h2>
         <ul class="claims" id="claims"></ul>
+        <button id="btn-new-claim" type="button" class="mini-wide">+ 새 연구 주제</button>
       </section>
 
       <section class="panel">
@@ -73,6 +75,7 @@
     </form>
   </dialog>
 
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="app.js"></script>
 </body>
 </html>
