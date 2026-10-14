@@ -1,5 +1,20 @@
 {
-  "scope": "VLM & LLM Safety, Alignment",
+  "scope": "Making foundation models (LLMs and VLMs) faithfully adhere to specified principles: honesty, appropriate refusal and corrigibility that hold under pressure, and telling genuine adherence from surface compliance in preference-based alignment.",
+  "scope_include": [
+    "value alignment and specification adherence: training or checking models to follow written principles, constitutions or model specs",
+    "honesty: lying, deception, sycophancy, hallucination presented as fact, calibration and admitting uncertainty",
+    "harmlessness and refusal: refusing harmful requests, over-refusal of benign ones, refusal behavior and its mechanisms",
+    "robustness of safety behavior under pressure: jailbreaks, prompt injection, misleading context, fine-tuning attacks, when they explain why principles fail",
+    "corrigibility and controllability: following legitimate instructions, accepting correction or shutdown, instruction hierarchy",
+    "alignment faking, deceptive alignment, scheming, reward hacking and specification gaming",
+    "how preference-based alignment (RLHF, DPO, reward models, preference data) shapes the above, including theory"
+  ],
+  "scope_exclude": [
+    "models that are not LLMs or VLMs",
+    "alignment or post-training only for task performance (math, code, agents) with no safety, honesty or control angle",
+    "new attack recipes with no analysis of why the model's principles fail",
+    "applications or benchmarks in a single domain with no general method or finding"
+  ],
   "topics": [
     "jailbreak",
     "prompt-injection",
@@ -50,19 +65,29 @@
       "cs.CR"
     ],
     "arxiv_keywords": [
+      "model specification",
+      "constitutional AI",
+      "value alignment",
+      "honesty",
+      "deception",
+      "sycophancy",
+      "calibration",
+      "hallucination",
+      "refusal",
+      "over-refusal",
       "jailbreak",
       "prompt injection",
-      "over-refusal",
-      "refusal",
+      "corrigibility",
+      "instruction hierarchy",
+      "alignment faking",
+      "deceptive alignment",
+      "scheming",
+      "reward hacking",
+      "specification gaming",
+      "RLHF",
+      "preference optimization",
       "safety alignment",
-      "guardrail",
-      "red teaming",
-      "hallucination",
-      "calibration",
-      "unlearning",
-      "vision-language model safety",
-      "multimodal safety",
-      "preference optimization"
+      "vision-language model safety"
     ],
     "s2_citations_of": "confirmed",
     "openalex_institutions": [],

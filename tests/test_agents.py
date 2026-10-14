@@ -101,6 +101,14 @@ class AgentsTest(unittest.TestCase):
         self.assertEqual(p["abstract"], "The abstract.")
         self.assertEqual(p["author_names"], ["Yue Liu"])
 
+    def test_screen_prompt_includes_rules(self):
+        cfg = {**CONFIG, "scope_include": ["honesty of LLMs"], "scope_exclude": ["pure attack recipes"]}
+        (self.d / "config.json").write_text(json.dumps(cfg))
+        seen = []
+        screen.run(self.d, "2026-10-15", log=lambda *_: None, chat=lambda a, sys_, u, **kw: (seen.append(sys_), fake_screen(a, sys_, u))[1])
+        self.assertIn("- honesty of LLMs", seen[0])
+        self.assertIn("Out of scope:\n- pure attack recipes", seen[0])
+
     def test_screen_splits_batch_on_bad_json(self):
         def flaky(agent, system, user, **kw):
             items = json.loads(user)

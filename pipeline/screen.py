@@ -21,9 +21,10 @@ from common import GOAL, METHOD, MODAL, SETTING, clean_tags, file_for, load_dir,
 
 SYSTEM = """You screen new research papers for a researcher.
 Research scope: {scope}
-
+{rules}
 For each paper decide if it is IN SCOPE: its main contribution must be about the scope, not just mention it.
 Be inclusive for borderline papers that a researcher in this scope would want to know about.
+Out-of-scope rules win over in-scope ones.
 For in-scope papers, also assign tags:
 - method (list, 1+): {method}. train = proposes a training method; inference = inference-time method (steering, decoding, guardrail at run time, prompting); eval = benchmark or evaluation protocol; analysis = explains a phenomenon; other = attacks or anything else.
 - main_method: the one main contribution, from method.
@@ -69,7 +70,12 @@ def run(data_dir: Path, today: str, log=print, chat=None):
         log("screening: nothing to screen")
         return []
 
-    system = SYSTEM.format(scope=config.get("scope", ""), method=", ".join(METHOD), goal=", ".join(GOAL),
+    rules = ""
+    if config.get("scope_include"):
+        rules += "In scope:\n" + "\n".join(f"- {r}" for r in config["scope_include"]) + "\n"
+    if config.get("scope_exclude"):
+        rules += "Out of scope:\n" + "\n".join(f"- {r}" for r in config["scope_exclude"]) + "\n"
+    system = SYSTEM.format(scope=config.get("scope", ""), rules=rules, method=", ".join(METHOD), goal=", ".join(GOAL),
                            modal=" or ".join(MODAL), setting=" or ".join(SETTING), topics=", ".join(topics))
     decisions, added = [], []
     log_path = data_dir / "logs" / "screening" / f"{today}.json"
