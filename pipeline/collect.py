@@ -34,7 +34,8 @@ DEFAULT_COLLECT = {
     "s2_citations_of": "confirmed",
     "openalex_institutions": [],
     "openalex_keywords": [],
-    "max_per_source": 200,
+    "max_per_source": 400,
+    "overlap_days": 3,
 }
 
 
@@ -296,7 +297,12 @@ def run(data_dir: Path, today: str, log=print):
     state_path = data_dir / "state" / "collect.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {"last_run": None, "seen": []}
     default_since = (dt.date.fromisoformat(today) - dt.timedelta(days=cfg["days"])).isoformat()
-    since = state["last_run"] or default_since
+    if state["last_run"]:
+        # arXiv shows a paper a day or more after its "published" date, so look back a few days;
+        # anything already proposed is dropped through state["seen"].
+        since = (dt.date.fromisoformat(state["last_run"]) - dt.timedelta(days=cfg["overlap_days"])).isoformat()
+    else:
+        since = default_since
 
     papers = load_dir(data_dir / "papers")
     known_ids = set(papers) | set(state.get("seen", []))
