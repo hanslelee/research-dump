@@ -50,9 +50,8 @@ def paper_block(p):
     for line in (meta_line(p), tag_line(p)):
         if line:
             lines.append(html.escape(line))
-    for label, key in (("주장", "claim"), ("조건", "condition"), ("빈 곳", "gap")):
-        if s.get(key):
-            lines.append(f"<b>{label}</b> {html.escape(s[key])}")
+    if s.get("claim"):
+        lines.append(html.escape(s["claim"]))
     if (p.get("provenance") or {}).get("summary_check") == "incomplete":
         lines.append("⚠ 요약 일부가 비어 있어요")
     return "\n".join(lines)

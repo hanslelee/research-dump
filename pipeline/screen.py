@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import checkpoint  # noqa: E402
 import llm  # noqa: E402
-from common import GOAL, METHOD, MODAL, SETTING, clean_tags, file_for, load_dir, read_json, write_json  # noqa: E402
+from common import GOAL, METHOD, MODAL, SETTING, clean_tags, clean_text, file_for, load_dir, read_json, write_json  # noqa: E402
 
 SYSTEM = """You screen new research papers for a researcher.
 Research scope: {scope}
@@ -88,7 +88,7 @@ def run(data_dir: Path, today: str, log=print, chat=None):
             write_json(log_path, earlier + decisions)
 
     def ask(chunk):
-        user = json.dumps([{"id": c["id"], "title": c["title"], "abstract": c["abstract"][:1500]} for c in chunk], ensure_ascii=False)
+        user = json.dumps([{"id": c["id"], "title": clean_text(c["title"]), "abstract": clean_text(c["abstract"])[:1500]} for c in chunk], ensure_ascii=False)
         reply = chat(agent, system, user, json_mode=True)
         data = llm.parse_json(reply["text"])
         rows = data.get("results", []) if isinstance(data, dict) else data

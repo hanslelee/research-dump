@@ -34,7 +34,7 @@ def fake_screen(agent, system, user, **kw):
 
 def fake_summary(agent, system, user, **kw):
     if "Partial" in user:
-        return {"text": '{"claim": "c", "condition": "", "gap": "g"}', "model": "x.test/m"}
+        return {"text": '{"claim": "주장", "condition": "", "gap": "g"}', "model": "x.test/m"}
     return {"text": 'Sure! {"claim": "주장", "condition": "조건", "gap": "빈 곳"}', "model": "x.test/m"}
 
 
@@ -314,3 +314,39 @@ class S2SearchTest(unittest.TestCase):
         self.assertIn("token=t", urls[1])
         self.assertIn("publicationDateOrYear=2026-10-06%3A", urls[0])
         self.assertEqual(collect.s2_bulk_query(["jailbreak", "prompt injection"]), 'jailbreak | "prompt injection"')
+
+
+class SummaryLanguageTest(unittest.TestCase):
+    def test_clean_text(self):
+        from common import clean_text
+        self.assertEqual(clean_text("We propose \\bench{}, a \\textbf{new} set with $k=3$"), "We propose bench, a new set with k=3")
+        self.assertEqual(clean_text("guardrail \x08ench{}를"), "guardrail ench를")
+
+    def test_english_model_summary_is_redone(self):
+        with tempfile.TemporaryDirectory() as t:
+            d = Path(t)
+            (d / "config.json").write_text(json.dumps(CONFIG))
+            (d / "papers").mkdir()
+            rows = [("arxiv:1", "English claim.", "x.test/m"), ("arxiv:2", "한국어 주장.", "x.test/m"), ("arxiv:3", "Manual English.", "manual")]
+            for pid, claim, model in rows:
+                (d / "papers" / f"{pid.replace(':', '_')}.json").write_text(json.dumps(
+                    {"id": pid, "title": "T", "abstract": "a", "status": "new", "summary": {"claim": claim},
+                     "provenance": {"summary_model": model}}))
+            done = summarize.run(d, "2026-10-15", log=lambda *_: None, chat=fake_summary)
+            self.assertEqual([p["id"] for p in done], ["arxiv:1"])
+
+    def test_reply_in_english_is_not_saved(self):
+        with tempfile.TemporaryDirectory() as t:
+            d = Path(t)
+            (d / "config.json").write_text(json.dumps(CONFIG))
+            (d / "papers").mkdir()
+            (d / "papers" / "arxiv_1.json").write_text(json.dumps({"id": "arxiv:1", "title": "T", "abstract": "a", "status": "new"}))
+            english = lambda a, s, u, **kw: {"text": '{"claim": "It works.", "condition": "c", "gap": "g"}', "model": "x.test/m"}
+            self.assertEqual(summarize.run(d, "2026-10-15", log=lambda *_: None, chat=english), [])
+
+    def test_telegram_shows_claim_only(self):
+        p = {"title": "T", "url": "u", "summary": {"claim": "주장", "condition": "조건", "gap": "(추론) 빈 곳"}}
+        block = notify.paper_block(p)
+        self.assertIn("주장", block)
+        self.assertNotIn("조건", block)
+        self.assertNotIn("빈 곳", block)

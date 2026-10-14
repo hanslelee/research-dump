@@ -1,5 +1,6 @@
 """Shared helpers for pipeline scripts."""
 import json
+import re
 from pathlib import Path
 
 METHOD = ["train", "inference", "eval", "analysis", "other"]
@@ -38,3 +39,17 @@ def clean_tags(raw: dict, topics: list) -> dict:
     setting = raw.get("setting") if raw.get("setting") in SETTING else "standalone"
     topic = [t for t in as_list(raw.get("topic")) if t in topics]
     return {"method": method, "main_method": main, "goal": goal, "modal": modal, "setting": setting, "topic": topic}
+
+
+def clean_text(text: str) -> str:
+    """Strip LaTeX commands and control characters that break JSON and Telegram.
+
+    \\textbf{X} -> X, \\bench{} -> bench, $x$ -> x, stray backspace/form-feed characters removed.
+    """
+    t = text or ""
+    t = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", t)          # control characters (e.g. \b from "\\bench")
+    for _ in range(3):
+        t = re.sub(r"\\[A-Za-z]+\*?\{([^{}]+)\}", r"\1", t)        # \cmd{inner} -> inner
+    t = re.sub(r"\\([A-Za-z]+)\*?(\{\})?", r"\1", t)                # \bench{} or \ours -> its name
+    t = t.replace("$", "").replace("{}", "")
+    return re.sub(r"\s+", " ", t).strip()
