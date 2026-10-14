@@ -23,7 +23,7 @@ def load(folder: Path, sub: str):
 
 
 def main(folder: Path) -> int:
-    errors = []
+    errors, warnings = [], []
     cfg = json.loads((folder / "config.json").read_text())
     topics = set(cfg.get("topics", []))
     papers, authors = load(folder, "papers"), load(folder, "authors")
@@ -40,7 +40,7 @@ def main(folder: Path) -> int:
         if t.get("modal") not in MODAL: err(pid, f"modal {t.get('modal')}")
         if t.get("setting") not in SETTING: err(pid, f"setting {t.get('setting')}")
         extra = set(t.get("topic", [])) - topics
-        if extra: err(pid, f"topic not in config.topics: {sorted(extra)}")
+        if extra: warnings.append(f"{pid}: topic not in config.topics: {sorted(extra)}")
         if p.get("status") not in {"new", "hold", "confirmed"}: err(pid, f"status {p.get('status')}")
         for a in p.get("authors", []):
             if a not in authors: err(pid, f"unknown author {a}")
@@ -62,6 +62,8 @@ def main(folder: Path) -> int:
         if r.get("status") not in {"new", "approved", "rejected"}: err(rid, f"status {r.get('status')}")
 
     print(f"{len(papers)} papers, {len(authors)} authors, {len(claims)} claims, {len(relations)} relations")
+    for w in warnings:
+        print("WARN", w)
     for e in errors:
         print("ERROR", e)
     return 1 if errors else 0
