@@ -322,27 +322,15 @@ class SummaryLanguageTest(unittest.TestCase):
         self.assertEqual(clean_text("We propose \\bench{}, a \\textbf{new} set with $k=3$"), "We propose bench, a new set with k=3")
         self.assertEqual(clean_text("guardrail \x08ench{}를"), "guardrail ench를")
 
-    def test_english_model_summary_is_redone(self):
-        with tempfile.TemporaryDirectory() as t:
-            d = Path(t)
-            (d / "config.json").write_text(json.dumps(CONFIG))
-            (d / "papers").mkdir()
-            rows = [("arxiv:1", "English claim.", "x.test/m"), ("arxiv:2", "한국어 주장.", "x.test/m"), ("arxiv:3", "Manual English.", "manual")]
-            for pid, claim, model in rows:
-                (d / "papers" / f"{pid.replace(':', '_')}.json").write_text(json.dumps(
-                    {"id": pid, "title": "T", "abstract": "a", "status": "new", "summary": {"claim": claim},
-                     "provenance": {"summary_model": model}}))
-            done = summarize.run(d, "2026-10-15", log=lambda *_: None, chat=fake_summary)
-            self.assertEqual([p["id"] for p in done], ["arxiv:1"])
-
-    def test_reply_in_english_is_not_saved(self):
+    def test_english_reply_is_kept(self):
         with tempfile.TemporaryDirectory() as t:
             d = Path(t)
             (d / "config.json").write_text(json.dumps(CONFIG))
             (d / "papers").mkdir()
             (d / "papers" / "arxiv_1.json").write_text(json.dumps({"id": "arxiv:1", "title": "T", "abstract": "a", "status": "new"}))
             english = lambda a, s, u, **kw: {"text": '{"claim": "It works.", "condition": "c", "gap": "g"}', "model": "x.test/m"}
-            self.assertEqual(summarize.run(d, "2026-10-15", log=lambda *_: None, chat=english), [])
+            done = summarize.run(d, "2026-10-15", log=lambda *_: None, chat=english)
+            self.assertEqual(done[0]["summary"]["claim"], "It works.")
 
     def test_telegram_shows_claim_only(self):
         p = {"title": "T", "url": "u", "summary": {"claim": "주장", "condition": "조건", "gap": "(추론) 빈 곳"}}

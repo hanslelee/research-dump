@@ -10,7 +10,6 @@ import argparse
 import datetime as dt
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -19,25 +18,14 @@ import checkpoint  # noqa: E402
 import llm  # noqa: E402
 from common import clean_text, file_for, load_dir, write_json  # noqa: E402
 
-HANGUL = re.compile(r"[\uac00-\ud7a3]")
-
-
-def needs_summary(p, korean):
-    claim = (p.get("summary") or {}).get("claim") or ""
-    if not claim:
-        return True
-    # written by a model in the wrong language: redo (manual summaries are left alone)
-    by_model = (p.get("provenance") or {}).get("summary_model") not in (None, "manual", "none")
-    return korean and by_model and not HANGUL.search(claim)
-
 SYSTEM = """You summarize one research paper for a researcher looking for research gaps.
 Use only the title and abstract given. Do not invent results that are not stated.
-Write every field in {language}. This is required even if the abstract is in English.
+Write in {language}.
 
-Fields, one sentence each:
-- claim: what the paper does and what it finds, with the main number if the abstract gives one.
+Fields:
+- claim: what the paper shows or proposes, one or two sentences, with the main number if the abstract gives one.
 - condition: the scope under which the claim holds: models, data, modality, setting, assumptions. Never leave this empty; if the abstract does not say, write what is missing.
-- gap: what the paper leaves open. Start with "(저자)" if the abstract itself states this limitation, otherwise "(추론)".
+- gap: what the paper does not cover or leaves open, one or two sentences. Start with "(저자)" if the abstract itself states this limitation, otherwise "(추론)".
 
 Plain text only: no LaTeX, no markdown.
 Reply with JSON only: {{"claim": "...", "condition": "...", "gap": "..."}}"""
@@ -56,8 +44,8 @@ def run(data_dir: Path, today: str, log=print, chat=None):
     every = int(opts.get("save_every", 5))
 
     papers = load_dir(data_dir / "papers")
-    korean = language.lower().startswith("korean")
-    todo = [p for p in papers.values() if needs_summary(p, korean) and (p.get("abstract") or "").strip()]
+    todo = [p for p in papers.values()
+            if not (p.get("summary") or {}).get("claim") and (p.get("abstract") or "").strip()]
     skipped = sum(1 for p in papers.values() if not (p.get("summary") or {}).get("claim") and not (p.get("abstract") or "").strip())
     if skipped:
         log(f"summary: {skipped} papers have no abstract yet")
@@ -76,9 +64,6 @@ def run(data_dir: Path, today: str, log=print, chat=None):
             log(f"summary: skipped {p['id']} ({e})")
             continue
         summary = {k: clean_text(str(s.get(k, ""))) for k in ("claim", "condition", "gap")}
-        if korean and summary["claim"] and not HANGUL.search(summary["claim"]):
-            log(f"summary: skipped {p['id']} (not in Korean, will retry next run)")
-            continue
         p["summary"] = summary
         p["provenance"] = {**(p.get("provenance") or {}), "summary_model": reply["model"], "summary_from": "abstract",
                            "summarized_at": today,
