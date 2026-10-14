@@ -18,7 +18,9 @@ import urllib.parse
 import urllib.request
 
 _last_call = {}
-RETRY_WAITS = (15, 30, 60)
+_failed_over = set()  # models that were busy this run: go straight to the fallback
+PRIMARY_WAITS = (10,)
+FALLBACK_WAITS = (15, 30, 60)
 
 
 class LLMError(RuntimeError):
@@ -82,10 +84,15 @@ def chat(agent_cfg: dict, system: str, user: str, temperature: float = 0.0, time
         hint = f" Available: {', '.join(models[:40])}" if models else ""
         raise LLMUnavailable(f"Set a model name in config.json (llm.*.model).{hint}")
 
-    models = [model] + ([agent_cfg["fallback_model"]] if agent_cfg.get("fallback_model") else [])
+    fallback = agent_cfg.get("fallback_model")
+    plan = []
+    if not (fallback and model in _failed_over):
+        plan.append((model, PRIMARY_WAITS if fallback else FALLBACK_WAITS))
+    if fallback:
+        plan.append((fallback, FALLBACK_WAITS))
     last = None
-    for m in models:
-        for attempt, wait in enumerate((0,) + RETRY_WAITS):
+    for m, waits in plan:
+        for wait in (0,) + waits:
             if wait:
                 time.sleep(wait)
             try:
@@ -107,6 +114,8 @@ def chat(agent_cfg: dict, system: str, user: str, temperature: float = 0.0, time
             except (urllib.error.URLError, TimeoutError) as e:
                 last = f"{m}: {e}"
                 continue
+        if m == model and fallback:
+            _failed_over.add(model)
     raise LLMUnavailable(f"busy or out of quota after retries ({last})")
 
 

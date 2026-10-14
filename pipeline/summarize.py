@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import checkpoint  # noqa: E402
 import llm  # noqa: E402
 from common import file_for, load_dir, write_json  # noqa: E402
 
@@ -39,6 +40,7 @@ def run(data_dir: Path, today: str, log=print, chat=None):
     opts = config.get("summary") or {}
     language = opts.get("language", "Korean, keeping technical terms in English")
     max_items = int(opts.get("max_per_run", 60))
+    every = int(opts.get("save_every", 5))
 
     papers = load_dir(data_dir / "papers")
     todo = [p for p in papers.values()
@@ -67,6 +69,10 @@ def run(data_dir: Path, today: str, log=print, chat=None):
                            "summary_check": "ok" if all(summary.values()) else "incomplete"}
         write_json(data_dir / file_for("papers", p["id"]), p)
         done.append(p)
+        log(f"summary: {p['id']} ({reply['model']})")
+        if len(done) % every == 0:
+            checkpoint.save(data_dir, f"Summaries: {len(done)} written", log)
+    checkpoint.save(data_dir, f"Summaries: {len(done)} written", log)
     log(f"summary: {len(done)} written")
     return done
 

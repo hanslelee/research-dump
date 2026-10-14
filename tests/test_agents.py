@@ -154,3 +154,72 @@ class AgentsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LLMFallbackTest(unittest.TestCase):
+    def tearDown(self):
+        llm._post, llm.time.sleep = self._orig
+        llm._failed_over.clear()
+
+    def setUp(self):
+        self._orig = (llm._post, llm.time.sleep)
+        os.environ["K"] = "k"
+        llm._failed_over.clear()
+        self.sleeps = []
+        llm.time.sleep = self.sleeps.append
+        self.calls = []
+
+    def fake_post(self, busy):
+        import io
+        import urllib.error
+
+        def post(agent, model, system, user, temperature, json_mode, timeout):
+            self.calls.append(model)
+            if model in busy:
+                raise urllib.error.HTTPError("u", 503, "busy", {}, io.BytesIO(b"busy"))
+            return "{}", f"x.test/{model}"
+        return post
+
+    def test_busy_primary_fails_over_and_stays_over(self):
+        llm._post = self.fake_post({"big"})
+        cfg = {**AGENT, "model": "big", "fallback_model": "small"}
+        self.assertEqual(llm.chat(cfg, "s", "u")["model"], "x.test/small")
+        self.assertEqual(self.calls, ["big", "big", "small"])   # one short retry, then fallback
+        self.calls.clear()
+        llm.chat(cfg, "s", "u")
+        self.assertEqual(self.calls, ["small"])                 # rest of the run skips the busy model
+        self.assertEqual(sum(self.sleeps), 10)
+
+    def test_both_busy_raises_unavailable(self):
+        llm._post = self.fake_post({"big", "small"})
+        with self.assertRaises(llm.LLMUnavailable):
+            llm.chat({**AGENT, "model": "big", "fallback_model": "small"}, "s", "u")
+
+
+class CheckpointTest(unittest.TestCase):
+    def test_commits_and_pushes_when_enabled(self):
+        import subprocess
+        import checkpoint
+        with tempfile.TemporaryDirectory() as t:
+            remote, work = Path(t) / "remote.git", Path(t) / "work"
+            run = lambda *a, cwd=t: subprocess.run(a, cwd=cwd, check=True, capture_output=True)
+            run("git", "init", "-q", "--bare", "-b", "main", str(remote))
+            run("git", "clone", "-q", str(remote), str(work))
+            run("git", "config", "user.email", "t@t", cwd=work)
+            run("git", "config", "user.name", "t", cwd=work)
+            (work / "a.json").write_text("{}")
+            run("git", "add", "-A", cwd=work)
+            run("git", "commit", "-q", "-m", "init", cwd=work)
+            run("git", "push", "-q", "origin", "HEAD:main", cwd=work)
+            run("git", "branch", "-q", "--set-upstream-to=origin/main", cwd=work)
+            (work / "b.json").write_text("{}")
+            os.environ.pop("CHECKPOINT", None)
+            self.assertFalse(checkpoint.save(work, "x", log=lambda *_: None))
+            os.environ["CHECKPOINT"] = "1"
+            try:
+                self.assertTrue(checkpoint.save(work, "Summaries: 5 written", log=lambda *_: None))
+                self.assertFalse(checkpoint.save(work, "nothing new", log=lambda *_: None))
+            finally:
+                os.environ.pop("CHECKPOINT", None)
+            out = subprocess.run(["git", "log", "--oneline", "main"], cwd=remote, capture_output=True, text=True).stdout
+            self.assertIn("Summaries: 5 written", out)

@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import checkpoint  # noqa: E402
 import llm  # noqa: E402
 from common import GOAL, METHOD, MODAL, SETTING, clean_tags, file_for, load_dir, read_json, write_json  # noqa: E402
 
@@ -126,6 +127,7 @@ def run(data_dir: Path, today: str, log=print, chat=None):
                 write_json(data_dir / file_for("papers", paper["id"]), paper)
                 added.append(paper)
         save()  # after every batch, so a stopped run keeps its progress
+        checkpoint.save(data_dir, f"Screening: {len(decisions)} judged, {len(added)} in scope", log)
 
     save()
     log(f"screening: {len(decisions)} judged, {len(added)} in scope")
