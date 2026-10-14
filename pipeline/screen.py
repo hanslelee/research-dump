@@ -71,6 +71,14 @@ def run(data_dir: Path, today: str, log=print, chat=None):
     system = SYSTEM.format(scope=config.get("scope", ""), method=", ".join(METHOD), goal=", ".join(GOAL),
                            modal=" or ".join(MODAL), setting=" or ".join(SETTING), topics=", ".join(topics))
     decisions, added = [], []
+    log_path = data_dir / "logs" / "screening" / f"{today}.json"
+    earlier = read_json(log_path, [])
+
+    def save():
+        state["done"] = sorted(done)
+        write_json(state_path, state)
+        if decisions:
+            write_json(log_path, earlier + decisions)
 
     def ask(chunk):
         user = json.dumps([{"id": c["id"], "title": c["title"], "abstract": c["abstract"][:1500]} for c in chunk], ensure_ascii=False)
@@ -117,12 +125,9 @@ def run(data_dir: Path, today: str, log=print, chat=None):
                 }
                 write_json(data_dir / file_for("papers", paper["id"]), paper)
                 added.append(paper)
+        save()  # after every batch, so a stopped run keeps its progress
 
-    state["done"] = sorted(done)
-    write_json(state_path, state)
-    if decisions:
-        log_path = data_dir / "logs" / "screening" / f"{today}.json"
-        write_json(log_path, read_json(log_path, []) + decisions)
+    save()
     log(f"screening: {len(decisions)} judged, {len(added)} in scope")
     return added
 

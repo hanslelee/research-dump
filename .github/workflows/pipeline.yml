@@ -27,6 +27,9 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUNBUFFERED: "1"
     permissions:
       contents: write
     steps:
@@ -51,6 +54,7 @@ jobs:
 
       - name: Collect candidates
         continue-on-error: true
+        timeout-minutes: 10
         env:
           S2_API_KEY: ${{ secrets.S2_API_KEY }}
           OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
@@ -58,12 +62,14 @@ jobs:
 
       - name: Fill in missing abstracts
         continue-on-error: true
+        timeout-minutes: 10
         env:
           S2_API_KEY: ${{ secrets.S2_API_KEY }}
         run: python code/pipeline/enrich.py --data data
 
       - name: Screening agent
         continue-on-error: true
+        timeout-minutes: 20
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -71,6 +77,7 @@ jobs:
 
       - name: Summary agent
         continue-on-error: true
+        timeout-minutes: 25
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
