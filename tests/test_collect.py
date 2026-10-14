@@ -84,7 +84,7 @@ class CollectTest(unittest.TestCase):
         (self.d / "papers").mkdir()
         (self.d / "config.json").write_text(json.dumps({
             "scope": "x", "topics": [], "llm": {},
-            "collect": {"arxiv_keywords": ["jailbreak", "over-refusal"], "openalex_institutions": ["I1"], "days": 8},
+            "collect": {"arxiv_keywords": ["jailbreak", "over-refusal"], "openalex_institutions": ["I1"], "days": 8, "s2_search": False},
         }))
         for pid, status in (("arxiv:2505.11049", "confirmed"), ("arxiv:2504.02193", "new")):
             (self.d / "papers" / (pid.replace(":", "_") + ".json")).write_text(json.dumps(

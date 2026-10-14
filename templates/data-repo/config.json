@@ -100,7 +100,8 @@
       "jailbreak",
       "refusal"
     ],
-    "max_per_source": 400
+    "max_per_source": 400,
+    "s2_search": true
   },
   "screening": {
     "batch_size": 10,
@@ -109,5 +110,10 @@
   "summary": {
     "language": "Korean, keeping technical terms in English",
     "max_per_run": 60
+  },
+  "popularity": {
+    "star": 0.2,
+    "star2": 0.05,
+    "new_weeks": 6
   }
 }

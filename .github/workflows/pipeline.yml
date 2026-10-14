@@ -82,6 +82,14 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: python code/pipeline/screen.py --data data
 
+      - name: Venue, citations, affiliations
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          S2_API_KEY: ${{ secrets.S2_API_KEY }}
+          OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
+        run: python code/pipeline/metadata.py --data data
+
       - name: Summary agent
         continue-on-error: true
         timeout-minutes: 25

@@ -62,7 +62,7 @@ def run(data_dir: Path, log=print, max_papers: int = 200):
         log(f"enrich: {len(others)} non-arXiv papers skipped (S2_API_KEY not set)")
     for p in others if key else []:
         url = "https://api.semanticscholar.org/graph/v1/paper/search/match?" + urllib.parse.urlencode(
-            {"query": p["title"], "fields": "title,abstract,authors"})
+            {"query": p["title"], "fields": "paperId,title,abstract,authors"})
         try:
             data = collect.get_json(url, {"x-api-key": key}).get("data") or []
         except Exception as e:
@@ -71,6 +71,7 @@ def run(data_dir: Path, log=print, max_papers: int = 200):
         hit = data[0] if data else None
         if hit and hit.get("abstract") and same_title(hit.get("title"), p["title"]):
             p["abstract"] = hit["abstract"]
+            p.setdefault("ids", {})["s2"] = hit.get("paperId")
             if not p.get("author_names"):
                 p["author_names"] = [a.get("name", "") for a in hit.get("authors") or []]
             write_json(data_dir / file_for("papers", p["id"]), p)

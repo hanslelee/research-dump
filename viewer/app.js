@@ -38,6 +38,7 @@
     relations: [],
     filters: {},              // axis -> Set of allowed values
     show: { extends: true, conflicts: true, 'same-author': false, pending: true },
+    only: { industry: false, starred: false },
     selectedClaim: null,
   };
   let cy = null;
@@ -202,6 +203,8 @@
     const linked = state.selectedClaim ? new Set(claimLinks(state.selectedClaim).map(r => r.from)) : null;
     return [...state.papers.values()].filter(p => {
       if (linked && !linked.has(p.id)) return false;
+      if (state.only.industry && !p.meta?.industry) return false;
+      if (state.only.starred && !String(p.meta?.popularity || '').startsWith('★')) return false;
       for (const [axis, def] of Object.entries(AXES)) {
         const allowed = state.filters[axis];
         const v = p.tags?.[axis];
@@ -285,6 +288,8 @@
 
     for (const p of papers) {
       const cls = ['paper', `m-${p.tags?.main_method || p.tags?.method?.[0] || 'other'}`, `s-${p.status}`];
+      const pop = p.meta?.popularity;
+      if (pop === '★★') cls.push('pop-2'); else if (pop === '★') cls.push('pop-1');
       if (claimType.has(p.id)) cls.push(`c-${claimType.get(p.id)}`);
       els.push({ group: 'nodes', data: { id: p.id, label: shortTitle(p.title) }, position: pos.get(p.id), classes: cls.join(' ') });
     }
@@ -311,6 +316,27 @@
     return els;
   }
 
+  // white star glyph(s) drawn inside the node circle
+  function starSvg(n) {
+    const text = n === 2 ? '★★' : '★';
+    const size = n === 2 ? 34 : 52;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">` +
+      `<text x="50" y="${n === 2 ? 62 : 68}" font-size="${size}" text-anchor="middle" fill="#ffffff" font-family="sans-serif">${text}</text></svg>`;
+    return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+  }
+
+  function metaLine(p) {
+    const m = p.meta || {};
+    const parts = [];
+    const venue = m.venue || p.venue || '', year = m.year || p.year;
+    if (venue) parts.push(venue === 'arXiv' || !year ? venue : `${venue} ${year}`);
+    if (m.institutions?.length) parts.push(m.institutions.slice(0, 2).join(', ') + (m.institutions.length > 2 ? ' 외' : ''));
+    const date = String(m.published || p.published || '').slice(0, 7);
+    if (date.length === 7) parts.push(date.replace('-', '.'));
+    if (m.citations != null) parts.push(`인용 ${m.citations}`);
+    return parts.join(' · ');
+  }
+
   function graphStyle() {
     const ink = css('--ink'), quiet = css('--quiet'), surface = css('--surface');
     const method = m => ({ selector: `node.m-${m}`, style: { 'background-color': css(`--m-${m}`) } });
@@ -322,6 +348,8 @@
         'text-background-color': surface, 'text-background-opacity': 0.75, 'text-background-padding': 1,
         'border-width': 2, 'border-color': surface } },
       ...['train', 'inference', 'eval', 'analysis', 'other'].map(method),
+      { selector: 'node.pop-1', style: { width: 34, height: 34, 'background-image': starSvg(1), 'background-fit': 'contain', 'background-clip': 'none' } },
+      { selector: 'node.pop-2', style: { width: 42, height: 42, 'background-image': starSvg(2), 'background-fit': 'contain', 'background-clip': 'none' } },
       { selector: 'node.s-new', style: { 'border-color': css('--new'), 'border-width': 4 } },
       { selector: 'node.s-hold', style: { 'border-color': css('--hold'), 'border-width': 3, 'border-style': 'dashed', opacity: 0.75 } },
       ...CLAIM_TYPES.map(ring),
@@ -357,6 +385,7 @@
     const parts = ['train', 'inference', 'eval', 'analysis', 'other'].map(m => `<span><i class="dot" style="background:var(--m-${m})"></i>${m}</span>`);
     parts.push('<span><i class="ring" style="border-color:var(--new)"></i>new</span>');
     parts.push('<span><i class="ring" style="border-color:var(--hold);border-style:dashed"></i>보류</span>');
+    parts.push('<span>★ 인용 속도 상위 20%</span><span>★★ 상위 5%</span>');
     if (state.selectedClaim) parts.push(...CLAIM_TYPES.map(t => `<span><i class="ring" style="border-color:var(--${t})"></i>${t}</span>`));
     $('#legend').innerHTML = parts.join('');
   }
@@ -388,6 +417,14 @@
     $('#relation-toggles').innerHTML = rel.map(([k, label, color, dash]) =>
       `<label><input type="checkbox" data-k="${k}" ${state.show[k] ? 'checked' : ''}><i class="swatch ${dash}" style="border-color:${color}"></i>${label}</label>`).join('');
     $('#relation-toggles').onchange = e => { state.show[e.target.dataset.k] = e.target.checked; renderGraph(); };
+
+    // view filters
+    const nInd = [...state.papers.values()].filter(p => p.meta?.industry).length;
+    const nStar = [...state.papers.values()].filter(p => String(p.meta?.popularity || '').startsWith('★')).length;
+    $('#view-toggles').innerHTML = `
+      <label><input type="checkbox" data-only="industry" ${state.only.industry ? 'checked' : ''}>기업 논문만<span class="count">${nInd}</span></label>
+      <label><input type="checkbox" data-only="starred" ${state.only.starred ? 'checked' : ''}>★ 이상만<span class="count">${nStar}</span></label>`;
+    $('#view-toggles').onchange = e => { state.only[e.target.dataset.only] = e.target.checked; renderGraph(); };
 
     // tag filters
     const counts = {};
@@ -459,7 +496,8 @@
     const targets = [...state.papers.values()].filter(x => x.id !== id);
     $('#detail').innerHTML = `
       <h3>${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>` : esc(p.title)}</h3>
-      <div class="meta">${esc(p.venue || '')} ${esc(p.year || '')}${authors.length ? ` · ${esc(authors.join(', '))}` : ''}</div>
+      <div class="meta-line">${p.meta?.popularity?.startsWith('★') ? `<span class="star">${esc(p.meta.popularity)}</span> ` : ''}${esc(metaLine(p) || `${p.venue || ''} ${p.year || ''}`)}${p.meta?.popularity === 'new' ? ' <span class="chip">신규</span>' : ''}${p.meta?.industry ? ' <span class="chip">기업</span>' : ''}</div>
+      ${authors.length ? `<div class="meta">${esc(authors.join(', '))}</div>` : ''}
       <div class="chips"><span class="badge ${esc(p.status)}">${esc(p.status)}</span>${chips.map(c => `<span class="chip">${esc(c)}</span>`).join('')}</div>
       <div class="actions">
         <button type="button" data-action="paper-confirm" data-id="${esc(id)}" ${p.status === 'confirmed' ? 'disabled' : ''}>확인 완료</button>

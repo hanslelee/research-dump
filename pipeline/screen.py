@@ -123,6 +123,7 @@ def run(data_dir: Path, today: str, log=print, chat=None):
             if r.get("in_scope"):
                 paper = {
                     "id": c["id"], "title": c["title"], "authors": [], "author_names": c.get("authors", []),
+                    "ids": c.get("ids", {}), "published": c.get("published", ""),
                     "year": c.get("year"), "venue": c.get("venue", ""), "url": c.get("url", ""),
                     "abstract": c.get("abstract", ""), "tags": clean_tags(r.get("tags"), topics),
                     "summary": {"claim": "", "condition": "", "gap": ""},

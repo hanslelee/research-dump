@@ -31,6 +31,7 @@ DEFAULT_COLLECT = {
     "days": 8,
     "arxiv_categories": ["cs.CL", "cs.LG", "cs.CV", "cs.AI", "cs.CR"],
     "arxiv_keywords": [],
+    "s2_search": True,
     "s2_citations_of": "confirmed",
     "openalex_institutions": [],
     "openalex_keywords": [],
@@ -173,6 +174,43 @@ def s2_item(p, source):
     )
 
 
+def s2_bulk_query(keywords):
+    return " | ".join(f'"{k}"' if " " in k else k for k in keywords)
+
+
+def collect_s2_search(cfg, since, log):
+    """Keyword search over all venues (conferences, journals, arXiv) with Semantic Scholar bulk search."""
+    key = os.environ.get("S2_API_KEY", "")
+    keywords = cfg.get("s2_keywords") or cfg["arxiv_keywords"]
+    if not cfg.get("s2_search", True):
+        return []
+    if not key:
+        log("s2 search: skipped (S2_API_KEY not set)")
+        return []
+    if not keywords:
+        log("s2 search: skipped (no keywords)")
+        return []
+    items, token = [], None
+    while len(items) < cfg["max_per_source"]:
+        params = {"query": s2_bulk_query(keywords), "fields": S2_FIELDS, "publicationDateOrYear": f"{since}:",
+                  "fieldsOfStudy": "Computer Science", "sort": "publicationDate:desc"}
+        if token:
+            params["token"] = token
+        data = get_json("https://api.semanticscholar.org/graph/v1/paper/search/bulk?" + urllib.parse.urlencode(params),
+                        {"x-api-key": key})
+        for p in data.get("data") or []:
+            it = s2_item(p, "s2:search")
+            if it["title"]:
+                items.append(it)
+        token = data.get("token")
+        if not token:
+            break
+        time.sleep(1.1)
+    items = items[:cfg["max_per_source"]]
+    log(f"s2 search: {len(items)}")
+    return items
+
+
 def collect_s2(cfg, papers, since, log):
     key = os.environ.get("S2_API_KEY", "")
     if not key:
@@ -310,7 +348,9 @@ def run(data_dir: Path, today: str, log=print):
 
     log(f"collect since {since}")
     items = []
-    for name, fn in (("arxiv", lambda: collect_arxiv(cfg, since, log)),
+    # Semantic Scholar first (all venues, venue and citations included), then arXiv for the newest preprints
+    for name, fn in (("s2 search", lambda: collect_s2_search(cfg, since, log)),
+                     ("arxiv", lambda: collect_arxiv(cfg, since, log)),
                      ("s2", lambda: collect_s2(cfg, papers, since, log)),
                      ("openalex", lambda: collect_openalex(cfg, since, log))):
         try:

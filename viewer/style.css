@@ -150,6 +150,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .badge.approved { background: var(--support); }
 .badge.rejected { background: var(--hold); }
 .meta { color: var(--quiet); font-size: 12px; }
+.meta-line { font-size: 13px; margin: 2px 0 4px; }
+.meta-line .star { color: #d9a400; font-weight: 700; }
 .field { margin: 8px 0; }
 .field b { display: block; font-size: 12px; color: var(--quiet); font-weight: 600; }
 .field p { margin: 2px 0 0; white-space: pre-wrap; }

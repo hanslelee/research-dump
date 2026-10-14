@@ -231,3 +231,86 @@ class CheckpointTest(unittest.TestCase):
                 os.environ.pop("CHECKPOINT", None)
             out = subprocess.run(["git", "log", "--oneline", "main"], cwd=remote, capture_output=True, text=True).stdout
             self.assertIn("Summaries: 5 written", out)
+
+
+class MetadataTest(unittest.TestCase):
+    def setUp(self):
+        import metadata
+        self.m = metadata
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = Path(self.tmp.name)
+        (self.d / "config.json").write_text(json.dumps({"scope": "x", "topics": [], "llm": {}}))
+        (self.d / "papers").mkdir()
+        for pid in ("arxiv:2505.11049", "openreview:abc"):
+            (self.d / "papers" / f"{pid.replace(':', '_')}.json").write_text(json.dumps(
+                {"id": pid, "title": pid, "year": 2025, "venue": "TMLR", "status": "new"}))
+        os.environ["S2_API_KEY"] = "s2key"
+        os.environ.pop("OPENALEX_API_KEY", None)
+        self.orig = (metadata.http_post_json, collect.get_json, metadata.time.sleep)
+        self.posted = []
+
+        def post(url, body, headers):
+            self.posted.append(body["ids"])
+            return [{"paperId": "P1", "venue": "Neural Information Processing Systems",
+                     "publicationVenue": {"name": "Neural Information Processing Systems", "alternate_names": ["NeurIPS", "NIPS"]},
+                     "year": 2025, "publicationDate": "2025-05-16", "citationCount": 40, "influentialCitationCount": 5}]
+        metadata.http_post_json = post
+        collect.get_json = lambda url, headers=None: {"authorships": [
+            {"institutions": [{"display_name": "National University of Singapore", "type": "education"}]},
+            {"institutions": [{"display_name": "Google DeepMind (United Kingdom)", "type": "company"}]}]}
+        metadata.time.sleep = lambda s: None
+
+    def tearDown(self):
+        self.m.http_post_json, collect.get_json, self.m.time.sleep = self.orig
+        self.tmp.cleanup()
+
+    def test_run_fills_meta(self):
+        self.m.run(self.d, "2026-10-15", log=lambda *_: None)
+        self.assertEqual(self.posted, [["ARXIV:2505.11049"]])     # openreview has no Semantic Scholar id
+        p = json.loads((self.d / "papers" / "arxiv_2505.11049.json").read_text())
+        self.assertEqual(p["meta"]["venue"], "NeurIPS")
+        self.assertEqual(p["meta"]["citations"], 40)
+        self.assertEqual(p["meta"]["institutions"], ["NUS", "Google DeepMind"])
+        self.assertTrue(p["meta"]["industry"])
+        self.assertEqual(p["ids"]["s2"], "P1")
+        other = json.loads((self.d / "papers" / "openreview_abc.json").read_text())
+        self.assertEqual(other["meta"]["venue"], "TMLR")                # kept from the paper
+
+    def test_popularity_ranks_by_citation_speed(self):
+        today = dt_date = __import__("datetime").date(2026, 10, 15)
+        papers = [{"meta": {"published": f"2025-{m:02d}-01", "citations": c}} for m, c in
+                  [(1, 10), (2, 400), (3, 50), (4, 60), (5, 70), (6, 5), (7, 8), (8, 9), (9, 0), (10, 30)]]
+        papers.append({"meta": {"published": "2026-10-01", "citations": 3}})
+        self.m.rank_popularity(papers, today, star=0.2, star2=0.1)
+        pops = [p["meta"]["popularity"] for p in papers]
+        self.assertEqual(pops[1], "★★")
+        self.assertEqual(pops.count("★"), 1)
+        self.assertEqual(pops[-1], "new")
+        self.assertEqual(pops[8], "")                                   # zero citations never get a star
+
+    def test_meta_line(self):
+        p = {"meta": {"venue": "NeurIPS", "year": 2025, "institutions": ["Google DeepMind", "NUS"],
+                      "published": "2026-10-12", "citations": 34}}
+        self.assertEqual(notify.meta_line(p), "NeurIPS 2025 · Google DeepMind, NUS · 2026.10 · 인용 34")
+        self.assertEqual(notify.meta_line({"meta": {"venue": "arXiv", "year": 2026, "published": "2026-10-12"}}),
+                         "arXiv · 2026.10")
+
+
+class S2SearchTest(unittest.TestCase):
+    def test_bulk_search_paginates_and_maps(self):
+        pages = [{"data": [{"paperId": "a", "title": "One", "externalIds": {"ArXiv": "2610.1"}, "publicationDate": "2026-10-10"}], "token": "t"},
+                 {"data": [{"paperId": "b", "title": "Two", "externalIds": {}, "publicationDate": "2026-10-09"}]}]
+        urls = []
+        orig = collect.get_json
+        collect.get_json = lambda url, headers=None: (urls.append(url), pages[len(urls) - 1])[1]
+        collect.time.sleep = lambda s: None
+        os.environ["S2_API_KEY"] = "k"
+        try:
+            cfg = {**collect.DEFAULT_COLLECT, "arxiv_keywords": ["jailbreak", "prompt injection"]}
+            items = collect.collect_s2_search(cfg, "2026-10-06", lambda *_: None)
+        finally:
+            collect.get_json = orig
+        self.assertEqual([i["id"] for i in items], ["arxiv:2610.1", "s2:b"])
+        self.assertIn("token=t", urls[1])
+        self.assertIn("publicationDateOrYear=2026-10-06%3A", urls[0])
+        self.assertEqual(collect.s2_bulk_query(["jailbreak", "prompt injection"]), 'jailbreak | "prompt injection"')
