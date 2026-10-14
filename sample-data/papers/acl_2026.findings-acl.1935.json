@@ -1,0 +1,37 @@
+{
+  "id": "acl:2026.findings-acl.1935",
+  "title": "Parametric Knowledge is Not All You Need: Toward Honest LLMs via Retrieval of Pretraining Data",
+  "authors": [
+    "author:hwee-tou-ng"
+  ],
+  "year": 2026,
+  "venue": "ACL Findings",
+  "url": "https://aclanthology.org/2026.findings-acl.1935/",
+  "abstract": "",
+  "tags": {
+    "method": [
+      "eval",
+      "inference"
+    ],
+    "main_method": "eval",
+    "goal": [
+      "honesty"
+    ],
+    "modal": "text",
+    "setting": "rag",
+    "topic": [
+      "hallucination"
+    ]
+  },
+  "summary": {
+    "claim": "",
+    "condition": "",
+    "gap": ""
+  },
+  "status": "confirmed",
+  "source": "manual",
+  "provenance": {
+    "summary_model": "manual",
+    "created_at": "2026-10-14"
+  }
+}

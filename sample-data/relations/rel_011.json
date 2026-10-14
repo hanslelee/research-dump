@@ -1,0 +1,11 @@
+{
+  "id": "rel:011",
+  "from": "arxiv:2601.04277",
+  "to": "claim:002",
+  "layer": "0-1",
+  "type": "unrelated",
+  "reason": "[DEMO] Calibration, not preference data.",
+  "status": "rejected",
+  "model": "manual",
+  "created_at": "2026-10-14"
+}

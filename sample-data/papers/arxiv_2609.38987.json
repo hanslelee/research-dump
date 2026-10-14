@@ -1,0 +1,35 @@
+{
+  "id": "arxiv:2609.38987",
+  "title": "Smaller Models, Better Rejects: Preference Distillation Scaling",
+  "authors": [],
+  "year": 2026,
+  "venue": "arXiv",
+  "url": "https://arxiv.org/abs/2609.38987",
+  "abstract": "",
+  "tags": {
+    "method": [
+      "train"
+    ],
+    "main_method": "train",
+    "goal": [
+      "helpfulness",
+      "harmlessness"
+    ],
+    "modal": "text",
+    "setting": "standalone",
+    "topic": [
+      "preference-data"
+    ]
+  },
+  "summary": {
+    "claim": "",
+    "condition": "",
+    "gap": ""
+  },
+  "status": "new",
+  "source": "manual",
+  "provenance": {
+    "summary_model": "manual",
+    "created_at": "2026-10-14"
+  }
+}

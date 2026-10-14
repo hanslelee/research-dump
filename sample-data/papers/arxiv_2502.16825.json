@@ -1,0 +1,36 @@
+{
+  "id": "arxiv:2502.16825",
+  "title": "Finding the Sweet Spot: Preference Data Construction for Scaling Preference Optimization",
+  "authors": [
+    "author:hwee-tou-ng"
+  ],
+  "year": 2025,
+  "venue": "ACL",
+  "url": "https://arxiv.org/abs/2502.16825",
+  "abstract": "",
+  "tags": {
+    "method": [
+      "train"
+    ],
+    "main_method": "train",
+    "goal": [
+      "helpfulness"
+    ],
+    "modal": "text",
+    "setting": "standalone",
+    "topic": [
+      "preference-data"
+    ]
+  },
+  "summary": {
+    "claim": "",
+    "condition": "",
+    "gap": ""
+  },
+  "status": "confirmed",
+  "source": "manual",
+  "provenance": {
+    "summary_model": "manual",
+    "created_at": "2026-10-14"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "rel:010",
+  "from": "arxiv:2609.38987",
+  "to": "claim:002",
+  "layer": "0-1",
+  "type": "duplicate",
+  "reason": "[DEMO] May already answer the claim directly; check before going further.",
+  "status": "new",
+  "model": "manual",
+  "created_at": "2026-10-14"
+}

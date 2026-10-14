@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "config.schema.json",
+  "title": "Config",
+  "type": "object",
+  "required": ["scope", "topics", "llm"],
+  "properties": {
+    "scope": { "type": "string", "description": "Research scope in one line, e.g. 'VLM & LLM Safety, Alignment'" },
+    "topics": { "type": "array", "items": { "type": "string" }, "description": "Allowed values for tags.topic" },
+    "llm": {
+      "type": "object",
+      "description": "One entry per agent. Any OpenAI-compatible endpoint works (Gemini, OpenRouter, OpenAI, DeepSeek...).",
+      "properties": {
+        "screening": { "$ref": "#/$defs/llm" },
+        "summary": { "$ref": "#/$defs/llm" },
+        "compare": { "$ref": "#/$defs/llm" }
+      }
+    },
+    "notify": {
+      "type": "object",
+      "properties": {
+        "telegram": { "type": "boolean" },
+        "hold_days": { "type": "integer", "default": 3 }
+      }
+    }
+  },
+  "$defs": {
+    "llm": {
+      "type": "object",
+      "required": ["base_url", "key_name", "model"],
+      "properties": {
+        "base_url": { "type": "string" },
+        "key_name": { "type": "string", "description": "Name of the GitHub Secret that holds the key" },
+        "model": { "type": "string" }
+      }
+    }
+  }
+}

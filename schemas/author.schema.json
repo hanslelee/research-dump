@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "author.schema.json",
+  "title": "Author",
+  "type": "object",
+  "required": ["id", "name"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^author:" },
+    "name": { "type": "string" },
+    "s2_id": { "type": "string" },
+    "openalex_id": { "type": "string" },
+    "affiliation": { "type": "string" },
+    "watch": { "type": "boolean", "description": "Show as an author node in the graph (e.g. professors you plan to contact)" }
+  }
+}

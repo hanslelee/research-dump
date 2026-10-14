@@ -1,0 +1,16 @@
+# Never commit real research data here. It belongs in your private data repository.
+/data/
+/research-dump-data/
+*.local.json
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

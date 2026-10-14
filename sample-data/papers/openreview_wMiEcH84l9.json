@@ -1,0 +1,36 @@
+{
+  "id": "openreview:wMiEcH84l9",
+  "title": "POPS: Recovering Unlearned Multi-Modality Knowledge in MLLMs",
+  "authors": [
+    "author:jason-hong"
+  ],
+  "year": 2026,
+  "venue": "TMLR",
+  "url": "https://openreview.net/forum?id=wMiEcH84l9",
+  "abstract": "",
+  "tags": {
+    "method": [
+      "other"
+    ],
+    "main_method": "other",
+    "goal": [
+      "harmlessness"
+    ],
+    "modal": "multimodal",
+    "setting": "standalone",
+    "topic": [
+      "unlearning"
+    ]
+  },
+  "summary": {
+    "claim": "",
+    "condition": "",
+    "gap": ""
+  },
+  "status": "confirmed",
+  "source": "manual",
+  "provenance": {
+    "summary_model": "manual",
+    "created_at": "2026-10-14"
+  }
+}

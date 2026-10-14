@@ -1,0 +1,40 @@
+# Reusable workflow. Each user's private data repository calls this once a week.
+# The code is checked out from this public repository; data, secrets and commits
+# stay in the caller's repository.
+name: pipeline
+
+on:
+  workflow_call:
+    inputs:
+      code_ref:
+        description: Branch or tag of research-dump to run
+        type: string
+        default: main
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out data (caller repository)
+        uses: actions/checkout@v4
+        with:
+          path: data
+
+      - name: Check out code (research-dump)
+        uses: actions/checkout@v4
+        with:
+          repository: hanslelee/research-dump
+          ref: ${{ inputs.code_ref }}
+          path: code
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate data
+        run: python code/pipeline/validate.py data
+
+      # Next stages are added here as they are built:
+      # collect -> screening -> summary -> compare -> notify

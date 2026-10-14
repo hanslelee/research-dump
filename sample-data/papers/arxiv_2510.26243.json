@@ -1,0 +1,37 @@
+{
+  "id": "arxiv:2510.26243",
+  "title": "Angular Steering: Behavior Control via Rotation in Activation Space",
+  "authors": [
+    "author:tan-nguyen"
+  ],
+  "year": 2025,
+  "venue": "NeurIPS",
+  "url": "https://arxiv.org/abs/2510.26243",
+  "abstract": "",
+  "tags": {
+    "method": [
+      "inference"
+    ],
+    "main_method": "inference",
+    "goal": [
+      "harmlessness"
+    ],
+    "modal": "text",
+    "setting": "standalone",
+    "topic": [
+      "steering",
+      "over-refusal"
+    ]
+  },
+  "summary": {
+    "claim": "",
+    "condition": "",
+    "gap": ""
+  },
+  "status": "confirmed",
+  "source": "manual",
+  "provenance": {
+    "summary_model": "manual",
+    "created_at": "2026-10-14"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "id": "claim:001",
+  "text": "[DEMO] Refusal steering learned on text transfers to VLMs without raising over-refusal",
+  "status": "candidate",
+  "version": 1,
+  "history": [],
+  "experiments": []
+}

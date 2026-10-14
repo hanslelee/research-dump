@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "paper.schema.json",
+  "title": "Paper (layer 0 node)",
+  "type": "object",
+  "required": ["id", "title", "authors", "year", "tags", "status", "source"],
+  "properties": {
+    "id": { "type": "string", "description": "Stable id, e.g. arxiv:2505.11049 or s2:<paperId>" },
+    "title": { "type": "string" },
+    "authors": { "type": "array", "items": { "type": "string", "pattern": "^author:" } },
+    "year": { "type": "integer" },
+    "venue": { "type": "string" },
+    "url": { "type": "string" },
+    "abstract": { "type": "string" },
+    "tags": {
+      "type": "object",
+      "required": ["method", "goal", "modal", "setting", "topic"],
+      "properties": {
+        "method": { "type": "array", "items": { "enum": ["train", "inference", "eval", "analysis", "other"] } },
+        "main_method": { "enum": ["train", "inference", "eval", "analysis", "other"] },
+        "goal": { "type": "array", "items": { "enum": ["harmlessness", "honesty", "helpfulness"] } },
+        "modal": { "enum": ["text", "multimodal"] },
+        "setting": { "enum": ["standalone", "rag", "agent"] },
+        "topic": { "type": "array", "items": { "type": "string" }, "description": "Must come from config.topics" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "claim": { "type": "string" },
+        "condition": { "type": "string" },
+        "gap": { "type": "string" }
+      }
+    },
+    "status": { "enum": ["new", "hold", "confirmed"] },
+    "source": { "enum": ["init", "collect", "manual"] },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "summary_model": { "type": "string" },
+        "created_at": { "type": "string", "format": "date" },
+        "confirmed_at": { "type": "string", "format": "date" }
+      }
+    }
+  }
+}

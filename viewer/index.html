@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>research-dump</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.34.3/dist/cytoscape.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">research-dump</div>
+    <div class="scope" id="scope"></div>
+    <div class="source" id="source-label"></div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <section class="panel">
+        <h2>데이터</h2>
+        <div class="source-actions">
+          <button id="btn-demo" type="button">데모 데이터</button>
+          <button id="btn-connect" type="button">내 저장소 연결</button>
+          <button id="btn-logout" type="button" class="quiet">로그아웃</button>
+        </div>
+        <p class="hint" id="load-status"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Layer 1 · 연구 주제</h2>
+        <ul class="claims" id="claims"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>관계</h2>
+        <div id="relation-toggles" class="toggles"></div>
+      </section>
+
+      <section class="panel">
+        <h2>태그</h2>
+        <div id="tag-filters"></div>
+      </section>
+    </aside>
+
+    <main class="graph-wrap">
+      <div id="graph" aria-label="논문 그래프"></div>
+      <div class="legend" id="legend"></div>
+      <div class="empty" id="empty" hidden>조건에 맞는 논문이 없어요.</div>
+    </main>
+
+    <aside class="detail" id="detail">
+      <p class="hint">논문 노드를 누르거나, 왼쪽에서 연구 주제를 고르면 여기에 내용이 보여요.</p>
+    </aside>
+  </div>
+
+  <dialog id="connect-dialog">
+    <form method="dialog" id="connect-form">
+      <h2>내 데이터 저장소 연결</h2>
+      <label>저장소 (owner/name)
+        <input name="repo" placeholder="hanslelee/research-dump-data" required>
+      </label>
+      <label>Branch
+        <input name="branch" value="main" required>
+      </label>
+      <label>GitHub fine-grained token
+        <input name="token" type="password" autocomplete="off" required>
+      </label>
+      <p class="hint">토큰은 이 브라우저에만 저장되고 api.github.com 말고는 어디에도 보내지 않아요. 공용 컴퓨터에서는 다 쓰고 로그아웃하세요.</p>
+      <div class="dialog-actions">
+        <button value="cancel" type="button" id="connect-cancel" class="quiet">취소</button>
+        <button value="ok" type="submit">연결</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

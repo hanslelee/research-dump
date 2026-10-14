@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "relation.schema.json",
+  "title": "Relation",
+  "description": "layer 0: paper -> paper (extends, conflicts). layer 0-1: paper -> claim. same-author is never stored; it is derived from paper.authors. unrelated is stored but never drawn.",
+  "type": "object",
+  "required": ["id", "from", "to", "layer", "type", "reason", "status"],
+  "properties": {
+    "id": { "type": "string" },
+    "from": { "type": "string", "description": "Paper id" },
+    "to": { "type": "string", "description": "Paper id (layer 0) or claim id (layer 0-1)" },
+    "layer": { "enum": ["0", "0-1"] },
+    "type": { "enum": ["extends", "conflicts", "support", "narrow", "conflict", "duplicate", "motivates", "unrelated"] },
+    "reason": { "type": "string" },
+    "status": { "enum": ["new", "approved", "rejected"] },
+    "model": { "type": "string", "description": "Model that drafted it, or 'manual'" },
+    "created_at": { "type": "string", "format": "date" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "layer": { "const": "0" } } },
+      "then": { "properties": { "type": { "enum": ["extends", "conflicts"] } } }
+    },
+    {
+      "if": { "properties": { "layer": { "const": "0-1" } } },
+      "then": { "properties": { "type": { "enum": ["support", "narrow", "conflict", "duplicate", "motivates", "unrelated"] } } }
+    }
+  ]
+}

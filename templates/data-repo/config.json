@@ -1,0 +1,38 @@
+{
+  "scope": "VLM & LLM Safety, Alignment",
+  "topics": [
+    "jailbreak",
+    "prompt-injection",
+    "over-refusal",
+    "guardrail",
+    "steering",
+    "preference-data",
+    "calibration",
+    "hallucination",
+    "deceptive-evidence",
+    "unlearning",
+    "fine-tuning-safety",
+    "reasoning-safety"
+  ],
+  "llm": {
+    "screening": {
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "key_name": "GEMINI_API_KEY",
+      "model": "SET-ME"
+    },
+    "summary": {
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "key_name": "GEMINI_API_KEY",
+      "model": "SET-ME"
+    },
+    "compare": {
+      "base_url": "https://openrouter.ai/api/v1",
+      "key_name": "OPENROUTER_API_KEY",
+      "model": "SET-ME"
+    }
+  },
+  "notify": {
+    "telegram": true,
+    "hold_days": 3
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "id": "arxiv:2505.15489",
+  "title": "Seeing Through Deception: Misleading Creator Intent in Multimodal News",
+  "authors": [
+    "author:min-yen-kan"
+  ],
+  "year": 2026,
+  "venue": "ICLR",
+  "url": "https://arxiv.org/abs/2505.15489",
+  "abstract": "",
+  "tags": {
+    "method": [
+      "eval"
+    ],
+    "main_method": "eval",
+    "goal": [
+      "honesty"
+    ],
+    "modal": "multimodal",
+    "setting": "standalone",
+    "topic": [
+      "deceptive-evidence"
+    ]
+  },
+  "summary": {
+    "claim": "",
+    "condition": "",
+    "gap": ""
+  },
+  "status": "confirmed",
+  "source": "manual",
+  "provenance": {
+    "summary_model": "manual",
+    "created_at": "2026-10-14"
+  }
+}

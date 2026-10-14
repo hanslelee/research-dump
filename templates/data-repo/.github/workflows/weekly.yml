@@ -1,0 +1,16 @@
+name: weekly
+
+on:
+  schedule:
+    - cron: "17 0 * * 1"   # Mondays 00:17 UTC (08:17 Singapore)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  pipeline:
+    uses: hanslelee/research-dump/.github/workflows/pipeline.yml@main
+    with:
+      code_ref: main
+    secrets: inherit

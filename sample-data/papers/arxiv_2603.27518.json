@@ -1,0 +1,35 @@
+{
+  "id": "arxiv:2603.27518",
+  "title": "Over-Refusal and Representation Subspaces",
+  "authors": [],
+  "year": 2026,
+  "venue": "arXiv",
+  "url": "https://arxiv.org/abs/2603.27518",
+  "abstract": "",
+  "tags": {
+    "method": [
+      "analysis"
+    ],
+    "main_method": "analysis",
+    "goal": [
+      "helpfulness"
+    ],
+    "modal": "text",
+    "setting": "standalone",
+    "topic": [
+      "over-refusal",
+      "steering"
+    ]
+  },
+  "summary": {
+    "claim": "",
+    "condition": "",
+    "gap": ""
+  },
+  "status": "confirmed",
+  "source": "manual",
+  "provenance": {
+    "summary_model": "manual",
+    "created_at": "2026-10-14"
+  }
+}

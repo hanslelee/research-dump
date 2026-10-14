@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "claim.schema.json",
+  "title": "Claim (layer 1 node, managed by a person)",
+  "type": "object",
+  "required": ["id", "text", "status", "version"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^claim:" },
+    "text": { "type": "string", "description": "The research claim in one line" },
+    "status": { "enum": ["candidate", "active", "hold", "retired"] },
+    "version": { "type": "integer", "minimum": 1 },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["version", "text"],
+        "properties": {
+          "version": { "type": "integer" },
+          "text": { "type": "string" },
+          "changed_at": { "type": "string", "format": "date" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "experiments": {
+      "type": "array",
+      "description": "Your own experiments. Kept only in the private data repository.",
+      "items": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string" },
+          "date": { "type": "string" },
+          "setup": { "type": "string" },
+          "result": { "type": "string" }
+        }
+      }
+    }
+  }
+}
