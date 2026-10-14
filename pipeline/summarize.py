@@ -49,11 +49,17 @@ def run(data_dir: Path, today: str, log=print, chat=None):
     done = []
     for p in todo[:max_items]:
         try:
-            reply = chat(agent, SYSTEM.format(language=language), f"Title: {p['title']}\n\nAbstract: {p['abstract'][:4000]}")
+            reply = chat(agent, SYSTEM.format(language=language), f"Title: {p['title']}\n\nAbstract: {p['abstract'][:4000]}",
+                         json_mode=True)
             s = llm.parse_json(reply["text"])
-        except llm.LLMError as e:
+            if not isinstance(s, dict):
+                raise llm.LLMError("reply is not an object")
+        except llm.LLMUnavailable as e:
             log(f"summary: stopped ({e})")
             break
+        except llm.LLMError as e:
+            log(f"summary: skipped {p['id']} ({e})")
+            continue
         summary = {k: str(s.get(k, "")).strip() for k in ("claim", "condition", "gap")}
         p["summary"] = summary
         p["provenance"] = {**(p.get("provenance") or {}), "summary_model": reply["model"], "summary_from": "abstract",

@@ -19,7 +19,7 @@ CONFIG = {"scope": "LLM safety", "topics": ["jailbreak", "calibration"],
           "llm": {"screening": AGENT, "summary": AGENT}, "notify": {"viewer_url": "https://v.test/"}}
 
 
-def fake_screen(agent, system, user):
+def fake_screen(agent, system, user, **kw):
     items = json.loads(user)
     res = []
     for it in items:
@@ -32,7 +32,7 @@ def fake_screen(agent, system, user):
     return {"text": "```json\n" + json.dumps({"results": res}) + "\n```", "model": "x.test/m"}
 
 
-def fake_summary(agent, system, user):
+def fake_summary(agent, system, user, **kw):
     if "Partial" in user:
         return {"text": '{"claim": "c", "condition": "", "gap": "g"}', "model": "x.test/m"}
     return {"text": 'Sure! {"claim": "주장", "condition": "조건", "gap": "빈 곳"}', "model": "x.test/m"}
@@ -65,7 +65,7 @@ class AgentsTest(unittest.TestCase):
         self.assertEqual({d["id"]: d["in_scope"] for d in log}, {"arxiv:1": True, "arxiv:2": False})
         # arxiv:3 got no answer -> retried next run, the others are not
         calls = []
-        screen.run(self.d, "2026-10-16", log=lambda *_: None, chat=lambda a, s, u: (calls.append(u), fake_screen(a, s, u))[1])
+        screen.run(self.d, "2026-10-16", log=lambda *_: None, chat=lambda a, s, u, **kw: (calls.append(u), fake_screen(a, s, u))[1])
         self.assertEqual([i["id"] for i in json.loads(calls[0])], ["arxiv:3"])
 
     def test_summarize_writes_and_flags_incomplete(self):
@@ -101,7 +101,34 @@ class AgentsTest(unittest.TestCase):
         self.assertEqual(p["abstract"], "The abstract.")
         self.assertEqual(p["author_names"], ["Yue Liu"])
 
+    def test_screen_splits_batch_on_bad_json(self):
+        def flaky(agent, system, user, **kw):
+            items = json.loads(user)
+            if len(items) > 1:
+                return {"text": '{"results": [{"id": "x",, }', "model": "x.test/m"}
+            if items[0]["id"] == "arxiv:2":
+                return {"text": "not json at all", "model": "x.test/m"}
+            return fake_screen(agent, system, user)
+        logs = []
+        added = screen.run(self.d, "2026-10-15", log=logs.append, chat=flaky)
+        self.assertEqual([p["id"] for p in added], ["arxiv:1"])
+        self.assertTrue(any("skipped arxiv:2" in l for l in logs))
+
+    def test_screen_stops_when_service_busy(self):
+        def busy(agent, system, user, **kw):
+            raise llm.LLMUnavailable("503")
+        logs = []
+        self.assertEqual(screen.run(self.d, "2026-10-15", log=logs.append, chat=busy), [])
+        self.assertTrue(any("stopped" in l for l in logs))
+        self.assertFalse((self.d / "logs").exists())
+
+    def test_same_title(self):
+        self.assertTrue(enrich.same_title("POPS: Recovering Unlearned Multi-Modality Knowledge in MLLMs with Prompt-Optimized Parameter Shaking",
+                                          "POPS: Recovering Unlearned Multi-Modality Knowledge in MLLMs"))
+        self.assertFalse(enrich.same_title("Angular Steering", "Another Paper Entirely"))
+
     def test_parse_json_variants(self):
+        self.assertEqual(llm.parse_json('{"results": [{"id": "a", "in_scope": false,},]}'), {"results": [{"id": "a", "in_scope": False}]})
         self.assertEqual(llm.parse_json('```json\n{"a": 1}\n```'), {"a": 1})
         self.assertEqual(llm.parse_json('Here you go: {"a": [1, 2]} hope it helps'), {"a": [1, 2]})
         with self.assertRaises(llm.LLMError):

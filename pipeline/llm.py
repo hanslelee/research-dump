@@ -2,7 +2,8 @@
 
 Every agent reads its entry from config.json:
 
-    "summary": {"base_url": "...", "key_name": "GEMINI_API_KEY", "model": "...", "min_interval": 6}
+    "summary": {"base_url": "...", "key_name": "GEMINI_API_KEY", "model": "...",
+                "fallback_model": "...", "min_interval": 6}
 
 Any OpenAI-compatible chat endpoint works: Gemini (OpenAI-compatible URL),
 OpenRouter, OpenAI, DeepSeek, Groq. Keys come from environment variables
@@ -17,16 +18,21 @@ import urllib.parse
 import urllib.request
 
 _last_call = {}
+RETRY_WAITS = (15, 30, 60)
 
 
 class LLMError(RuntimeError):
-    pass
+    """The reply could not be used (bad JSON, bad request). Skip this item and go on."""
+
+
+class LLMUnavailable(LLMError):
+    """The service is down, overloaded or out of quota. Stop this stage and try next run."""
 
 
 def _key(agent_cfg):
     key = os.environ.get(agent_cfg["key_name"], "")
     if not key:
-        raise LLMError(f"Secret {agent_cfg['key_name']} is not set")
+        raise LLMUnavailable(f"Secret {agent_cfg['key_name']} is not set")
     return key
 
 
@@ -42,64 +48,84 @@ def list_models(agent_cfg) -> list:
     return sorted(m.get("id", "") for m in data.get("data", []))
 
 
-def chat(agent_cfg: dict, system: str, user: str, temperature: float = 0.0, timeout: int = 180, retries: int = 3) -> dict:
-    """Return {"text": ..., "model": "<base host>/<model>"}."""
-    model = agent_cfg.get("model", "")
-    if not model or model == "SET-ME":
-        models = list_models(agent_cfg)
-        hint = f" Available: {', '.join(models[:40])}" if models else ""
-        raise LLMError(f"Set a model name in config.json (llm.*.model).{hint}")
+def _post(agent_cfg, model, system, user, temperature, json_mode, timeout):
     key = _key(agent_cfg)
-
-    # simple pacing for free tiers (requests per minute limits)
     gap = float(agent_cfg.get("min_interval", 0))
     host = urllib.parse.urlparse(agent_cfg["base_url"]).hostname or "llm"
     wait = _last_call.get(host, 0) + gap - time.time()
     if wait > 0:
         time.sleep(wait)
+    body = {"model": model, "temperature": temperature,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    if json_mode:
+        body["response_format"] = {"type": "json_object"}
+    req = urllib.request.Request(agent_cfg["base_url"].rstrip("/") + "/chat/completions",
+                                 data=json.dumps(body).encode(),
+                                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.load(r)
+    finally:
+        _last_call[host] = time.time()
+    return data["choices"][0]["message"]["content"] or "", f"{host}/{model}"
 
-    url = agent_cfg["base_url"].rstrip("/") + "/chat/completions"
-    body = json.dumps({
-        "model": model,
-        "temperature": temperature,
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-    }).encode()
-    req = urllib.request.Request(url, data=body, headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
-    for attempt in range(retries):
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                data = json.load(r)
-            break
-        except urllib.error.HTTPError as e:
-            detail = e.read()[:400]
-            if e.code in (429, 500, 502, 503) and attempt < retries - 1:
-                time.sleep(20 * (attempt + 1))
+
+def chat(agent_cfg: dict, system: str, user: str, temperature: float = 0.0, timeout: int = 180,
+         json_mode: bool = False) -> dict:
+    """Return {"text": ..., "model": "<host>/<model actually used>"}.
+
+    Busy or rate-limited (429/5xx): wait and retry, then try fallback_model once.
+    """
+    model = agent_cfg.get("model", "")
+    if not model or model == "SET-ME":
+        models = list_models(agent_cfg)
+        hint = f" Available: {', '.join(models[:40])}" if models else ""
+        raise LLMUnavailable(f"Set a model name in config.json (llm.*.model).{hint}")
+
+    models = [model] + ([agent_cfg["fallback_model"]] if agent_cfg.get("fallback_model") else [])
+    last = None
+    for m in models:
+        for attempt, wait in enumerate((0,) + RETRY_WAITS):
+            if wait:
+                time.sleep(wait)
+            try:
+                text, used = _post(agent_cfg, m, system, user, temperature, json_mode, timeout)
+                return {"text": text, "model": used}
+            except urllib.error.HTTPError as e:
+                detail = e.read()[:300]
+                if e.code == 400 and json_mode:
+                    json_mode = False  # endpoint does not support response_format: retry without it
+                    continue
+                if e.code in (429, 500, 502, 503, 504):
+                    last = f"{m} returned {e.code}: {detail!r}"
+                    continue
+                if e.code == 404:
+                    avail = list_models(agent_cfg)
+                    hint = f" Available: {', '.join(avail[:40])}" if avail else ""
+                    raise LLMUnavailable(f"Model '{m}' not found.{hint}") from e
+                raise LLMUnavailable(f"{m} returned {e.code}: {detail!r}") from e
+            except (urllib.error.URLError, TimeoutError) as e:
+                last = f"{m}: {e}"
                 continue
-            if e.code == 404:
-                models = list_models(agent_cfg)
-                hint = f" Available: {', '.join(models[:40])}" if models else ""
-                raise LLMError(f"Model '{model}' not found at {host}.{hint}") from e
-            raise LLMError(f"{url} returned {e.code}: {detail!r}") from e
-    _last_call[host] = time.time()
-    text = data["choices"][0]["message"]["content"] or ""
-    return {"text": text, "model": f"{host}/{model}"}
+    raise LLMUnavailable(f"busy or out of quota after retries ({last})")
 
 
 def parse_json(text: str):
-    """Pull the first JSON object or array out of a model reply (tolerates ```json fences and prose)."""
-    t = text.strip()
-    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", t)
-    try:
-        return json.loads(t)
-    except json.JSONDecodeError:
-        pass
+    """Pull the first JSON object or array out of a model reply.
+
+    Tolerates ```json fences, prose around the JSON and trailing commas.
+    """
+    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
+    candidates = [t]
     starts = [i for i in (t.find("{"), t.find("[")) if i >= 0]
-    if not starts:
-        raise LLMError(f"No JSON in reply: {text[:200]!r}")
-    start = min(starts)
-    closer = "}" if t[start] == "{" else "]"
-    end = t.rfind(closer)
-    try:
-        return json.loads(t[start:end + 1])
-    except json.JSONDecodeError as e:
-        raise LLMError(f"Bad JSON in reply: {e}: {text[:200]!r}") from e
+    if starts:
+        start = min(starts)
+        closer = "}" if t[start] == "{" else "]"
+        candidates.append(t[start:t.rfind(closer) + 1])
+    for c in candidates:
+        for variant in (c, re.sub(r",\s*([}\]])", r"\1", c)):
+            try:
+                return json.loads(variant)
+            except json.JSONDecodeError:
+                continue
+    raise LLMError(f"Bad JSON in reply: {text[:200]!r}")

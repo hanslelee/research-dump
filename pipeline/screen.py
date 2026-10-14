@@ -49,7 +49,7 @@ def run(data_dir: Path, today: str, log=print, chat=None):
         log("screening: skipped (no llm.screening in config.json)")
         return []
     opts = config.get("screening") or {}
-    batch_size = int(opts.get("batch_size", 20))
+    batch_size = int(opts.get("batch_size", 10))
     max_items = int(opts.get("max_per_run", 400))
     topics = config.get("topics", [])
 
@@ -71,21 +71,40 @@ def run(data_dir: Path, today: str, log=print, chat=None):
     system = SYSTEM.format(scope=config.get("scope", ""), method=", ".join(METHOD), goal=", ".join(GOAL),
                            modal=" or ".join(MODAL), setting=" or ".join(SETTING), topics=", ".join(topics))
     decisions, added = [], []
-    for chunk in batches(pending, batch_size):
+
+    def ask(chunk):
         user = json.dumps([{"id": c["id"], "title": c["title"], "abstract": c["abstract"][:1500]} for c in chunk], ensure_ascii=False)
+        reply = chat(agent, system, user, json_mode=True)
+        data = llm.parse_json(reply["text"])
+        rows = data.get("results", []) if isinstance(data, dict) else data
+        return {r.get("id"): r for r in rows if isinstance(r, dict)}, reply["model"]
+
+    def judge(chunk):
+        """Ask for a batch; if the reply is unusable, split it and ask again (down to one paper)."""
         try:
-            reply = chat(agent, system, user)
-            results = {r.get("id"): r for r in llm.parse_json(reply["text"]).get("results", [])}
+            return [(c, *pair) for pair in [ask(chunk)] for c in chunk]
+        except llm.LLMUnavailable:
+            raise
         except llm.LLMError as e:
+            if len(chunk) == 1:
+                log(f"screening: skipped {chunk[0]['id']} ({e})")
+                return []
+            mid = len(chunk) // 2
+            return judge(chunk[:mid]) + judge(chunk[mid:])
+
+    for chunk in batches(pending, batch_size):
+        try:
+            judged = judge(chunk)
+        except llm.LLMUnavailable as e:
             log(f"screening: stopped ({e})")
             break
-        for c in chunk:
+        for c, results, model in judged:
             r = results.get(c["id"])
             if r is None:
                 continue  # not answered: try again next run
             done.add(c["id"])
             decisions.append({"id": c["id"], "title": c["title"], "in_scope": bool(r.get("in_scope")),
-                              "reason": r.get("reason", ""), "model": reply["model"], "sources": c.get("sources", [])})
+                              "reason": r.get("reason", ""), "model": model, "sources": c.get("sources", [])})
             if r.get("in_scope"):
                 paper = {
                     "id": c["id"], "title": c["title"], "authors": [], "author_names": c.get("authors", []),
@@ -93,7 +112,7 @@ def run(data_dir: Path, today: str, log=print, chat=None):
                     "abstract": c.get("abstract", ""), "tags": clean_tags(r.get("tags"), topics),
                     "summary": {"claim": "", "condition": "", "gap": ""},
                     "status": "new", "source": "collect",
-                    "provenance": {"screen_model": reply["model"], "screen_reason": r.get("reason", ""),
+                    "provenance": {"screen_model": model, "screen_reason": r.get("reason", ""),
                                    "found_via": c.get("sources", []), "created_at": today},
                 }
                 write_json(data_dir / file_for("papers", paper["id"]), paper)

@@ -17,6 +17,17 @@ import collect  # noqa: E402
 from common import file_for, load_dir, write_json  # noqa: E402
 
 
+def same_title(a, b):
+    """Exact, prefix (our title is a shortened form) or high word overlap."""
+    a, b = collect.norm_title(a), collect.norm_title(b)
+    if not a or not b:
+        return False
+    if a == b or a.startswith(b) or b.startswith(a):
+        return True
+    wa, wb = set(a.split()), set(b.split())
+    return len(wa & wb) / len(wa | wb) >= 0.8
+
+
 def run(data_dir: Path, log=print, max_papers: int = 200):
     papers = load_dir(data_dir / "papers")
     need = [p for p in papers.values() if not (p.get("abstract") or "").strip()][:max_papers]
@@ -58,7 +69,7 @@ def run(data_dir: Path, log=print, max_papers: int = 200):
             log(f"enrich: S2 {p['id']} ({e})")
             continue
         hit = data[0] if data else None
-        if hit and hit.get("abstract") and collect.norm_title(hit.get("title")) == collect.norm_title(p["title"]):
+        if hit and hit.get("abstract") and same_title(hit.get("title"), p["title"]):
             p["abstract"] = hit["abstract"]
             if not p.get("author_names"):
                 p["author_names"] = [a.get("name", "") for a in hit.get("authors") or []]
