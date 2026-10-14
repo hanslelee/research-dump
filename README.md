@@ -34,5 +34,7 @@ Try the demo: open `viewer/` with the sample data (no token needed).
 - [x] Buttons: confirm, hold, approve/reject relations, manual summary, manual relations, claims with versions and experiments (one commit per action through the GitHub API)
 - [x] Import the public reading list into your data repository
 - [x] Collection: arXiv, Semantic Scholar (papers citing your confirmed papers), OpenAlex (by institution) → `candidates/`
-- [ ] Screening, summary and compare agents
-- [ ] Weekly run and Telegram notifications
+- [x] Abstracts filled in (arXiv, Semantic Scholar)
+- [x] Screening agent (scope + tags, every decision logged) and summary agent (claim / condition / gap from the abstract)
+- [x] Weekly run and Telegram notifications
+- [ ] Compare agent

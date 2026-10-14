@@ -439,7 +439,10 @@
     const p = state.papers.get(id); if (!p) return;
     const t = p.tags || {};
     const chips = [...(t.method || []).map(m => (m === t.main_method ? `★ ${m}` : m)), ...(t.goal || []), t.modal, t.setting, ...(t.topic || [])].filter(Boolean);
-    const authors = (p.authors || []).map(a => state.authors.get(a)?.name).filter(Boolean);
+    const linked = (p.authors || []).map(a => state.authors.get(a)?.name).filter(Boolean);
+    const names = p.author_names || [];
+    const authors = linked.length ? linked : (names.length > 4 ? [...names.slice(0, 3), `외 ${names.length - 3}명`] : names);
+    const pv = p.provenance || {};
     const out = state.relations.filter(r => r.from === id && r.type !== 'unrelated');
     const inc = state.relations.filter(r => r.to === id && r.layer === '0');
     const s = p.summary || {};
@@ -450,8 +453,9 @@
         <label>빈 곳<textarea name="gap" rows="3">${esc(s.gap)}</textarea></label>
         <div class="actions"><button type="submit">저장</button><button type="button" class="quiet" data-action="paper-view" data-id="${esc(id)}">취소</button></div>
       </form>` : `
+      ${pv.summary_check === 'incomplete' ? '<p class="rel duplicate">요약 일부가 비어 있어요. 확인해주세요.</p>' : ''}
       ${field('주장', s.claim)}${field('조건', s.condition)}${field('빈 곳', s.gap)}
-      <p class="meta">요약: ${esc(p.provenance?.summary_model || '-')} <button type="button" class="mini" data-action="summary-edit" data-id="${esc(id)}">직접 입력</button></p>`;
+      <p class="meta">요약: ${esc(pv.summary_model === 'none' || !pv.summary_model ? '아직 없음 (다음 실행 때 자동 요약)' : pv.summary_model)}${pv.summary_from === 'abstract' ? ' · 초록 기준' : ''} <button type="button" class="mini" data-action="summary-edit" data-id="${esc(id)}">직접 입력</button></p>`;
     const targets = [...state.papers.values()].filter(x => x.id !== id);
     $('#detail').innerHTML = `
       <h3>${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>` : esc(p.title)}</h3>
@@ -461,8 +465,10 @@
         <button type="button" data-action="paper-confirm" data-id="${esc(id)}" ${p.status === 'confirmed' ? 'disabled' : ''}>확인 완료</button>
         <button type="button" data-action="paper-hold" data-id="${esc(id)}" ${p.status === 'hold' ? 'disabled' : ''}>보류</button>
       </div>
+      ${pv.screen_reason ? `<p class="meta">스크리닝: ${esc(pv.screen_reason)}</p>` : ''}
       <h4>요약</h4>
       ${summary}
+      ${p.abstract ? `<details class="abstract"><summary>초록 보기</summary><p>${esc(p.abstract)}</p></details>` : ''}
       <h4>관계</h4>
       ${[...out.map(r => relCard(r, r.to)), ...inc.map(r => relCard(r, r.from))].join('') || '<p class="hint">아직 관계가 없어요.</p>'}
       <details class="add-rel">

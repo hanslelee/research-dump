@@ -176,6 +176,9 @@ form.edit textarea, form.edit input, form.edit select {
   border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; font-size: 13px;
 }
 form.edit textarea { resize: vertical; }
+details.abstract { margin: 10px 0; font-size: 13px; }
+details.abstract summary { cursor: pointer; color: var(--accent); }
+details.abstract p { margin: 6px 0 0; color: var(--quiet); line-height: 1.55; }
 details.add-rel { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
 details.add-rel summary { cursor: pointer; font-size: 13px; color: var(--accent); }
 

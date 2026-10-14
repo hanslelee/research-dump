@@ -31,18 +31,18 @@ jobs:
       contents: write
     steps:
       - name: Check out data (caller repository)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: data
 
       - name: Check out code (research-dump)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: hanslelee/research-dump
           ref: ${{ inputs.code_ref }}
           path: code
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -50,15 +50,43 @@ jobs:
         run: python code/pipeline/validate.py data
 
       - name: Collect candidates
+        continue-on-error: true
         env:
           S2_API_KEY: ${{ secrets.S2_API_KEY }}
           OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
         run: python code/pipeline/collect.py --data data
 
-      # Next stages are added here as they are built:
-      # screening -> summary -> compare -> notify
+      - name: Fill in missing abstracts
+        continue-on-error: true
+        env:
+          S2_API_KEY: ${{ secrets.S2_API_KEY }}
+        run: python code/pipeline/enrich.py --data data
+
+      - name: Screening agent
+        continue-on-error: true
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python code/pipeline/screen.py --data data
+
+      - name: Summary agent
+        continue-on-error: true
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python code/pipeline/summarize.py --data data
+
+      - name: Telegram notification
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python code/pipeline/notify.py --data data
+
+      # Next: compare agent
 
       - name: Commit changes to the data repository
+        if: ${{ !cancelled() }}
         working-directory: data
         run: |
           git config user.name "research-dump bot"
@@ -68,5 +96,6 @@ jobs:
             echo "No changes"
           else
             git commit -m "Weekly run $(date -u +%F)"
+            git pull --rebase
             git push
           fi
