@@ -3,44 +3,178 @@
   "$id": "paper.schema.json",
   "title": "Paper (layer 0 node)",
   "type": "object",
-  "required": ["id", "title", "authors", "year", "tags", "status", "source"],
+  "required": [
+    "id",
+    "title",
+    "authors",
+    "year",
+    "tags",
+    "marks",
+    "source"
+  ],
   "properties": {
-    "id": { "type": "string", "description": "Stable id, e.g. arxiv:2505.11049 or s2:<paperId>" },
-    "title": { "type": "string" },
-    "authors": { "type": "array", "items": { "type": "string", "pattern": "^author:" } },
-    "year": { "type": "integer" },
-    "venue": { "type": "string" },
-    "url": { "type": "string" },
-    "abstract": { "type": "string" },
+    "id": {
+      "type": "string",
+      "description": "Stable id, e.g. arxiv:2505.11049 or s2:<paperId>"
+    },
+    "title": {
+      "type": "string"
+    },
+    "authors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^author:"
+      }
+    },
+    "year": {
+      "type": "integer"
+    },
+    "venue": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    },
+    "abstract": {
+      "type": "string"
+    },
     "tags": {
       "type": "object",
-      "required": ["method", "goal", "modal", "setting", "topic"],
+      "required": [
+        "method",
+        "goal",
+        "modal",
+        "setting",
+        "topic"
+      ],
       "properties": {
-        "method": { "type": "array", "items": { "enum": ["train", "inference", "eval", "analysis", "other"] } },
-        "main_method": { "enum": ["train", "inference", "eval", "analysis", "other"] },
-        "goal": { "type": "array", "items": { "enum": ["harmlessness", "honesty", "helpfulness"] } },
-        "modal": { "enum": ["text", "multimodal"] },
-        "setting": { "enum": ["standalone", "rag", "agent"] },
-        "topic": { "type": "array", "items": { "type": "string" }, "description": "Must come from config.topics" }
+        "method": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "train",
+              "inference",
+              "eval",
+              "analysis",
+              "other"
+            ]
+          }
+        },
+        "main_method": {
+          "enum": [
+            "train",
+            "inference",
+            "eval",
+            "analysis",
+            "other"
+          ]
+        },
+        "goal": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "harmlessness",
+              "honesty",
+              "helpfulness"
+            ]
+          }
+        },
+        "modal": {
+          "enum": [
+            "text",
+            "multimodal"
+          ]
+        },
+        "setting": {
+          "enum": [
+            "standalone",
+            "rag",
+            "agent"
+          ]
+        },
+        "topic": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Must come from config.topics"
+        }
       }
     },
     "summary": {
       "type": "object",
       "properties": {
-        "claim": { "type": "string" },
-        "condition": { "type": "string" },
-        "gap": { "type": "string" }
+        "claim": {
+          "type": "string"
+        },
+        "condition": {
+          "type": "string"
+        },
+        "gap": {
+          "type": "string"
+        }
       }
     },
-    "status": { "enum": ["new", "hold", "confirmed"] },
-    "source": { "enum": ["init", "collect", "manual"] },
+    "source": {
+      "enum": [
+        "init",
+        "collect",
+        "manual",
+        "include"
+      ]
+    },
     "provenance": {
       "type": "object",
       "properties": {
-        "summary_model": { "type": "string" },
-        "created_at": { "type": "string", "format": "date" },
-        "confirmed_at": { "type": "string", "format": "date" }
+        "summary_model": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date"
+        },
+        "confirmed_at": {
+          "type": "string",
+          "format": "date"
+        }
       }
+    },
+    "marks": {
+      "type": "object",
+      "required": [
+        "liked",
+        "bookmarked",
+        "hidden"
+      ],
+      "description": "Set by a person on the web page",
+      "properties": {
+        "liked": {
+          "type": "boolean",
+          "description": "좋아요: used as a signal (S2 citation tracking, relation comparison)"
+        },
+        "bookmarked": {
+          "type": "boolean",
+          "description": "북마크: read later (filter only)"
+        },
+        "hidden": {
+          "type": "boolean",
+          "description": "숨김: hidden from the screen unless 숨긴 논문 보기 is on"
+        },
+        "liked_at": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    },
+    "memo": {
+      "type": "string",
+      "description": "Your own notes"
+    },
+    "entered_at": {
+      "type": "string",
+      "format": "date",
+      "description": "Day the paper entered the system (new badge for 7 days)"
     }
   }
 }

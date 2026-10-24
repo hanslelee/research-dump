@@ -10,11 +10,17 @@
 <body>
   <header class="topbar">
     <div class="brand">research-dump</div>
+    <nav class="tabs" id="tabs">
+      <button type="button" data-tab="home" class="on">홈</button>
+      <button type="button" data-tab="papers">논문 목록</button>
+      <button type="button" data-tab="topics">연구 주제</button>
+    </nav>
     <div class="scope" id="scope"></div>
     <div class="source" id="source-label"></div>
   </header>
 
-  <div class="layout">
+  <!-- 홈: graph -->
+  <div class="layout" id="view-home">
     <aside class="sidebar" id="sidebar">
       <section class="panel">
         <h2>데이터</h2>
@@ -57,6 +63,26 @@
 
     <aside class="detail" id="detail">
       <p class="hint">논문 노드를 누르거나, 왼쪽에서 연구 주제를 고르면 여기에 내용이 보여요.</p>
+    </aside>
+  </div>
+
+  <!-- 논문 목록 -->
+  <div class="tabview two" id="view-papers" hidden>
+    <aside class="sidebar" id="list-filters"></aside>
+    <main class="listwrap">
+      <div class="list-head" id="list-head"></div>
+      <div id="paper-list"></div>
+    </main>
+  </div>
+
+  <!-- 연구 주제 -->
+  <div class="tabview two-right" id="view-topics" hidden>
+    <main class="listwrap">
+      <div class="list-head" id="topic-head"></div>
+      <div id="topic-list"></div>
+    </main>
+    <aside class="detail" id="topic-detail">
+      <p class="hint">연구 주제를 누르면 여기에 내용이 보여요.</p>
     </aside>
   </div>
 

@@ -48,9 +48,11 @@
       "fallback_model": "gemini-3.5-flash-lite"
     },
     "compare": {
-      "base_url": "https://openrouter.ai/api/v1",
-      "key_name": "OPENROUTER_API_KEY",
-      "model": "SET-ME"
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "key_name": "GEMINI_API_KEY",
+      "model": "gemini-3.8-flash",
+      "min_interval": 6,
+      "fallback_model": "gemini-3.5-flash-lite"
     }
   },
   "notify": {
@@ -92,7 +94,7 @@
       "safety alignment",
       "vision-language model safety"
     ],
-    "s2_citations_of": "confirmed",
+    "s2_citations_of": "liked",
     "openalex_institutions": [],
     "openalex_keywords": [
       "safety",
@@ -115,5 +117,8 @@
     "star": 0.2,
     "star2": 0.05,
     "new_weeks": 6
+  },
+  "compare": {
+    "max_calls_per_run": 150
   }
 }

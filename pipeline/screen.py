@@ -3,7 +3,8 @@
     python pipeline/screen.py --data ../research-dump-data
 
 Reads candidates/*.json, skips ids already screened (state/screen.json).
-In-scope -> papers/<id>.json with status "new".
+In-scope -> papers/<id>.json (nothing marked yet: 좋아요/북마크/숨김 are set by a person).
+Keyword statistics (collected and included per keyword) -> state/keywords.json.
 Every decision (in or out, with reason and model) -> logs/screening/<date>.json,
 so recall can be measured later against a frozen set.
 """
@@ -17,7 +18,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import checkpoint  # noqa: E402
 import llm  # noqa: E402
-from common import GOAL, METHOD, MODAL, SETTING, clean_tags, clean_text, file_for, load_dir, read_json, write_json  # noqa: E402
+from common import (GOAL, METHOD, MODAL, SETTING, clean_tags, clean_text, file_for, load_dir, matched_keywords,  # noqa: E402
+                    new_marks, read_json, write_json)  # noqa: E402
 
 SYSTEM = """You screen new research papers for a researcher.
 Research scope: {scope}
@@ -66,7 +68,9 @@ def run(data_dir: Path, today: str, log=print, chat=None):
             if it["id"] not in done and it["id"] not in papers:
                 pending.append(it)
     pending = pending[:max_items]
-    if not pending:
+    # papers a person included from the 제외됨 list still need tags
+    retag = [p for p in papers.values() if (p.get("provenance") or {}).get("needs_tags")]
+    if not pending and not retag:
         log("screening: nothing to screen")
         return []
 
@@ -80,24 +84,38 @@ def run(data_dir: Path, today: str, log=print, chat=None):
     decisions, added = [], []
     log_path = data_dir / "logs" / "screening" / f"{today}.json"
     earlier = read_json(log_path, [])
+    keywords = (config.get("collect") or {}).get("arxiv_keywords") or []
+    kw_path = data_dir / "state" / "keywords.json"
+    kw = read_json(kw_path, {"last_run_date": "", "last_run": {}, "total": {}})
+    if kw.get("last_run_date") != today:
+        kw["last_run_date"], kw["last_run"] = today, {}
+
+    def count_keywords(c, included):
+        for k in matched_keywords(f"{c.get('title', '')} {c.get('abstract', '')}", keywords):
+            for bucket in (kw["last_run"], kw["total"]):
+                row = bucket.setdefault(k, {"collected": 0, "included": 0})
+                row["collected"] += 1
+                row["included"] += int(included)
 
     def save():
         state["done"] = sorted(done)
         write_json(state_path, state)
         if decisions:
             write_json(log_path, earlier + decisions)
+        if keywords:
+            write_json(kw_path, kw)
 
-    def ask(chunk):
-        user = json.dumps([{"id": c["id"], "title": clean_text(c["title"]), "abstract": clean_text(c["abstract"])[:1500]} for c in chunk], ensure_ascii=False)
-        reply = chat(agent, system, user, json_mode=True)
+    def ask(chunk, sys_prompt=system):
+        user = json.dumps([{"id": c["id"], "title": clean_text(c["title"]), "abstract": clean_text(c.get("abstract") or "")[:1500]} for c in chunk], ensure_ascii=False)
+        reply = chat(agent, sys_prompt, user, json_mode=True)
         data = llm.parse_json(reply["text"])
         rows = data.get("results", []) if isinstance(data, dict) else data
         return {r.get("id"): r for r in rows if isinstance(r, dict)}, reply["model"]
 
-    def judge(chunk):
+    def judge(chunk, sys_prompt=system):
         """Ask for a batch; if the reply is unusable, split it and ask again (down to one paper)."""
         try:
-            return [(c, *pair) for pair in [ask(chunk)] for c in chunk]
+            return [(c, *pair) for pair in [ask(chunk, sys_prompt)] for c in chunk]
         except llm.LLMUnavailable:
             raise
         except llm.LLMError as e:
@@ -105,7 +123,23 @@ def run(data_dir: Path, today: str, log=print, chat=None):
                 log(f"screening: skipped {chunk[0]['id']} ({e})")
                 return []
             mid = len(chunk) // 2
-            return judge(chunk[:mid]) + judge(chunk[mid:])
+            return judge(chunk[:mid], sys_prompt) + judge(chunk[mid:], sys_prompt)
+
+    tag_only = system + "\nThe researcher already chose to keep these papers: set in_scope to true and always give tags."
+    for chunk in batches(retag, batch_size):
+        try:
+            judged = judge(chunk, tag_only)
+        except llm.LLMUnavailable as e:
+            log(f"screening: tagging stopped ({e})")
+            break
+        for p, results, model in judged:
+            r = results.get(p["id"]) or {}
+            if r.get("tags"):
+                p["tags"] = clean_tags(r["tags"], topics)
+                p["provenance"].pop("needs_tags", None)
+                p["provenance"]["tag_model"] = model
+                write_json(data_dir / file_for("papers", p["id"]), p)
+                log(f"screening: tagged {p['id']} (included by you)")
 
     for chunk in batches(pending, batch_size):
         try:
@@ -120,6 +154,7 @@ def run(data_dir: Path, today: str, log=print, chat=None):
             done.add(c["id"])
             decisions.append({"id": c["id"], "title": c["title"], "in_scope": bool(r.get("in_scope")),
                               "reason": r.get("reason", ""), "model": model, "sources": c.get("sources", [])})
+            count_keywords(c, bool(r.get("in_scope")))
             if r.get("in_scope"):
                 paper = {
                     "id": c["id"], "title": c["title"], "authors": [], "author_names": c.get("authors", []),
@@ -127,7 +162,7 @@ def run(data_dir: Path, today: str, log=print, chat=None):
                     "year": c.get("year"), "venue": c.get("venue", ""), "url": c.get("url", ""),
                     "abstract": c.get("abstract", ""), "tags": clean_tags(r.get("tags"), topics),
                     "summary": {"claim": "", "condition": "", "gap": ""},
-                    "status": "new", "source": "collect",
+                    "marks": new_marks(), "memo": "", "entered_at": today, "source": "collect",
                     "provenance": {"screen_model": model, "screen_reason": r.get("reason", ""),
                                    "found_via": c.get("sources", []), "created_at": today},
                 }

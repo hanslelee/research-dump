@@ -1,0 +1,74 @@
+# Reusable workflow for requests made on the web page (관계 찾기, 연구 주제 추천).
+# The caller's data repository runs it when a file under requests/ is pushed.
+name: requests
+
+on:
+  workflow_call:
+    inputs:
+      code_ref:
+        description: Branch or tag of research-dump to run
+        type: string
+        default: main
+    secrets:
+      GEMINI_API_KEY:
+        required: false
+      OPENROUTER_API_KEY:
+        required: false
+      TELEGRAM_BOT_TOKEN:
+        required: false
+      TELEGRAM_CHAT_ID:
+        required: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUNBUFFERED: "1"
+    permissions:
+      contents: write
+    steps:
+      - name: Check out data (caller repository)
+        uses: actions/checkout@v5
+        with:
+          path: data
+
+      - name: Check out code (research-dump)
+        uses: actions/checkout@v5
+        with:
+          repository: hanslelee/research-dump
+          ref: ${{ inputs.code_ref }}
+          path: code
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install PDF reader
+        run: pip install --quiet pypdf
+
+      - name: Process requests
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python code/pipeline/migrate.py --data data
+          python code/pipeline/requests_run.py --data data
+
+      - name: Commit results to the data repository
+        if: ${{ !cancelled() }}
+        working-directory: data
+        run: |
+          git config user.name "research-dump bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "bundle.json merge=keep" >> .git/info/attributes
+          git config merge.keep.driver true
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Requests $(date -u +%F)"
+            for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done
+          fi

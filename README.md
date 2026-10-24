@@ -30,12 +30,15 @@ Try the demo: open `viewer/` with the sample data (no token needed).
 ## Status
 
 - [x] Schemas and sample data
-- [x] Viewer: graph, tag-based layout, filters, claim view, detail panel
-- [x] Buttons: confirm, hold, approve/reject relations, manual summary, manual relations, claims with versions and experiments (one commit per action through the GitHub API)
+- [x] Web page tabs: 홈 (graph; default shows liked + last 4 weeks + ★), 논문 목록 (sort by entry date / citations / popularity, filters, excluded candidates), 연구 주제 (claims with memo, versions, experiments, AI candidates)
+- [x] Buttons: 좋아요 / 북마크 / 숨김, memo, 재요약, 관계 찾기, 연구 주제 추천, approve/reject relations, manual summary and relations (one commit per action through the GitHub API)
+- [x] `bundle.json`: one file for fast loading, changed files fetched on top
 - [x] Import the public reading list into your data repository
-- [x] Collection: Semantic Scholar keyword search (all venues) first, then arXiv for the newest preprints, plus papers citing your confirmed papers and OpenAlex by institution → `candidates/`
+- [x] Collection: Semantic Scholar keyword search (all venues) first, then arXiv for the newest preprints, plus papers citing your liked or ★ papers and OpenAlex by institution → `candidates/`
 - [x] Metadata: venue, date, citations (refreshed weekly), affiliations and industry flag, popularity stars by citation speed
 - [x] Abstracts filled in (arXiv, Semantic Scholar)
 - [x] Screening agent (scope + tags, every decision logged) and summary agent (claim / condition / gap from the abstract)
 - [x] Weekly run and Telegram notifications
-- [ ] Compare agent
+- [x] Duplicate papers merged automatically; keyword statistics (Telegram and 논문 목록)
+- [x] Compare agent: new papers vs liked papers sharing a topic, strict, evidence sentence kept, approve/reject on the web page
+- [x] 연구 주제 추천 from a paper and its linked papers (PDF text), saved as AI candidates

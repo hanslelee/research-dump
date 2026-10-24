@@ -13,7 +13,8 @@ Your data never enters this repository.
 
 1. Create a **private** repository, e.g. `research-dump-data`.
 2. Copy everything in [`templates/data-repo/`](../templates/data-repo) into it
-   (`config.json`, the four empty folders, `.github/workflows/weekly.yml`).
+   (`config.json`, the four empty folders, `.github/workflows/weekly.yml` and `.github/workflows/requests.yml`).
+   `requests.yml` runs the **관계 찾기** and **연구 주제 추천** buttons; without it those requests wait forever.
 3. Edit `config.json`: set `scope` to your research scope in one line and pick a model for each agent.
 
 ## 2. Add secrets
@@ -49,7 +50,7 @@ The **재요약** button in a paper's panel calls the summary model (`config.jso
 | Key | Meaning |
 | --- | --- |
 | `arxiv_categories`, `arxiv_keywords` | arXiv search: any category AND any keyword in the abstract |
-| `s2_citations_of` | `"confirmed"`: new papers citing the papers you confirmed (default) |
+| `s2_citations_of` | `"liked"`: new papers citing the papers you liked or that are ★ (default; `"confirmed"` means the same). `"all"`: every paper |
 | `openalex_institutions` | OpenAlex institution ids, e.g. `["I1234567890"]` |
 | `openalex_keywords` | keywords for the institution search |
 | `days` | how far back the first run looks |
@@ -62,7 +63,24 @@ OPENALEX_API_KEY=... python pipeline/collect.py --find-institution "Anthropic"
 
 Each run writes `candidates/<date>.json` and remembers what it has seen in `state/collect.json`, so a paper is proposed once.
 
-## 5. Check it
+## 5. What runs when
+
+Weekly (`weekly.yml`): migrate old files → validate → collect → abstracts → screening → merge duplicates →
+venue/citations/affiliations → summary → compare (relations) → Telegram → `bundle.json` → commit.
+
+On request (`requests.yml`, starts when the web page saves a file under `requests/`):
+
+| Button | What happens | Model |
+| --- | --- | --- |
+| 관계 찾기 | that paper vs every other paper; proposals appear as `new` relations | `llm.compare` (falls back to `llm.summary`) |
+| 연구 주제 추천 | that paper + up to 4 papers linked by approved extends/conflicts (or, if none, liked papers with a shared topic). arXiv PDFs are downloaded and their text sent; 3 candidates appear in the 연구 주제 tab | `llm.recommend` (falls back to `llm.summary`) |
+
+Memos are never sent to a model.
+
+`bundle.json` packs every paper, author, claim and relation (with each file's git sha) so the web page loads in one request.
+Files changed after it was built are fetched one by one, so it is never stale.
+
+## 6. Check it
 
 - Actions tab of your data repository → **weekly** → **Run workflow**. It validates your data.
 - Locally: `python pipeline/validate.py <path-to-your-data-repo>`.

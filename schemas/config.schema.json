@@ -3,35 +3,84 @@
   "$id": "config.schema.json",
   "title": "Config",
   "type": "object",
-  "required": ["scope", "topics", "llm"],
+  "required": [
+    "scope",
+    "topics",
+    "llm"
+  ],
   "properties": {
-    "scope": { "type": "string", "description": "Research scope in one line, e.g. 'VLM & LLM Safety, Alignment'" },
-    "topics": { "type": "array", "items": { "type": "string" }, "description": "Allowed values for tags.topic" },
+    "scope": {
+      "type": "string",
+      "description": "Research scope in one line, e.g. 'VLM & LLM Safety, Alignment'"
+    },
+    "topics": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Allowed values for tags.topic"
+    },
     "llm": {
       "type": "object",
       "description": "One entry per agent. Any OpenAI-compatible endpoint works (Gemini, OpenRouter, OpenAI, DeepSeek...).",
       "properties": {
-        "screening": { "$ref": "#/$defs/llm" },
-        "summary": { "$ref": "#/$defs/llm" },
-        "compare": { "$ref": "#/$defs/llm" }
+        "screening": {
+          "$ref": "#/$defs/llm"
+        },
+        "summary": {
+          "$ref": "#/$defs/llm"
+        },
+        "compare": {
+          "$ref": "#/$defs/llm",
+          "description": "Relations. Falls back to llm.summary when unset or SET-ME"
+        },
+        "recommend": {
+          "$ref": "#/$defs/llm",
+          "description": "연구 주제 추천 (long input). Falls back to llm.summary"
+        }
       }
     },
     "notify": {
       "type": "object",
       "properties": {
-        "telegram": { "type": "boolean" },
-        "hold_days": { "type": "integer", "default": 3 }
+        "telegram": {
+          "type": "boolean"
+        },
+        "hold_days": {
+          "type": "integer",
+          "default": 3
+        }
+      }
+    },
+    "compare": {
+      "type": "object",
+      "properties": {
+        "max_calls_per_run": {
+          "type": "integer",
+          "default": 150
+        }
       }
     }
   },
   "$defs": {
     "llm": {
       "type": "object",
-      "required": ["base_url", "key_name", "model"],
+      "required": [
+        "base_url",
+        "key_name",
+        "model"
+      ],
       "properties": {
-        "base_url": { "type": "string" },
-        "key_name": { "type": "string", "description": "Name of the GitHub Secret that holds the key" },
-        "model": { "type": "string" }
+        "base_url": {
+          "type": "string"
+        },
+        "key_name": {
+          "type": "string",
+          "description": "Name of the GitHub Secret that holds the key"
+        },
+        "model": {
+          "type": "string"
+        }
       }
     }
   }

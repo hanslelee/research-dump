@@ -1,6 +1,7 @@
-/* research-dump viewer
+/* research-dump web page
  * Data sources: demo (../sample-data) or a private GitHub data repository read with the user's token.
  * The token is kept in this browser only and is sent only to api.github.com.
+ * Tabs: 홈 (graph), 논문 목록 (list), 연구 주제 (claims).
  */
 (() => {
   'use strict';
@@ -18,30 +19,50 @@
   const L0_TYPES = ['extends', 'conflicts'];
   const L01_TYPES = [...CLAIM_TYPES, 'unrelated'];
   const CLAIM_STATUS = ['candidate', 'active', 'hold', 'retired'];
+  const CLAIM_STATUS_KO = { candidate: '후보', active: '진행 중', hold: '보류', retired: '접음' };
   const STORAGE_KEY = 'research-dump.connection';
+  const NEW_DAYS = 7, RECENT_DAYS = 28;
+  const DIRS = ['papers', 'authors', 'claims', 'relations', 'requests'];
 
   const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const $ = sel => document.querySelector(sel);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const today = () => new Date().toISOString().slice(0, 10);
+  const daysAgo = n => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
   const newId = prefix => `${prefix}:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-  // File naming convention shared with pipeline/validate.py and sample-data
+  // File naming convention shared with pipeline/common.py
   const fileFor = (dir, id) => `${dir}/${String(id).replace(/[:/]/g, '_')}.json`;
 
   // ---------- state ----------
   const state = {
     source: null,             // 'demo' | 'github'
+    tab: 'home',
     config: null,
     papers: new Map(),
     authors: new Map(),
     claims: new Map(),
+    requests: new Map(),
     relations: [],
-    filters: {},              // axis -> Set of allowed values
+    excluded: [],
+    keywords: {},
+    filters: {},              // graph: axis -> Set of allowed values
     show: { extends: true, conflicts: true, 'same-author': false, pending: true },
-    only: { industry: false, starred: false, nosummary: false },
+    only: { all: false, hidden: false, industry: false, starred: false, nosummary: false },
     selectedClaim: null,
+    list: { view: 'papers', sort: 'entered', liked: false, bookmarked: false, industry: false, starred: false,
+      nosummary: false, hidden: false, venue: '', org: '', tags: new Set(), q: '', open: new Set() },
+    topics: { status: '', origin: '', selected: null },
   };
   let cy = null;
+
+  // ---------- paper helpers ----------
+  const marksOf = p => ({ liked: false, bookmarked: false, hidden: false, ...(p.marks || {}),
+    ...(p.status === 'confirmed' && !p.marks ? { liked: true } : {}), ...(p.status === 'hold' && !p.marks ? { bookmarked: true } : {}) });
+  const enteredAt = p => p.entered_at || p.provenance?.created_at || '';
+  const isNew = p => enteredAt(p) >= daysAgo(NEW_DAYS);
+  const isStarred = p => String(p.meta?.popularity || '').startsWith('★');
+  const venueOf = p => p.meta?.venue || p.venue || '';
+  const tagList = p => { const t = p.tags || {}; return [...(t.method || []), ...(t.goal || []), t.modal, t.setting, ...(t.topic || [])].filter(Boolean); };
 
   // ---------- storage (best effort) ----------
   const store = {
@@ -57,7 +78,7 @@
     t.textContent = msg;
     t.className = `toast show ${isError ? 'error' : ''}`;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { t.className = 'toast'; }, isError ? 6000 : 2500);
+    toastTimer = setTimeout(() => { t.className = 'toast'; }, isError ? 6000 : 3000);
   }
 
   // ---------- data loading ----------
@@ -68,15 +89,19 @@
     return r.json();
   }
 
+  function fromEntries(entries) {
+    const out = Object.fromEntries(DIRS.map(d => [d, []]));
+    for (const [path, data] of entries) {
+      const dir = path.split('/')[0];
+      if (out[dir]) out[dir].push(data);
+    }
+    return out;
+  }
+
   async function loadDemo() {
-    const index = await demoJSON('index.json');
-    const config = await demoJSON('config.json');
-    const read = (dir, files) => Promise.all(files.map(f => demoJSON(`${dir}/${f}`)));
-    const [papers, authors, relations, claims] = await Promise.all([
-      read('papers', index.papers), read('authors', index.authors),
-      read('relations', index.relations), read('claims', index.claims),
-    ]);
-    return { config, papers, authors, relations, claims };
+    const [bundle, config] = await Promise.all([demoJSON('bundle.json'), demoJSON('config.json')]);
+    const data = fromEntries(Object.entries(bundle.entries).map(([k, e]) => [k, e.data]));
+    return { config, ...data, excluded: bundle.excluded || [], keywords: bundle.keywords || {} };
   }
 
   const gh = {
@@ -86,17 +111,17 @@
     async call(method, path, body) {
       const r = await fetch(this.url(path), {
         method, headers: { ...this.headers(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
-        body: body ? JSON.stringify(body) : undefined,
+        body: body ? JSON.stringify(body) : undefined, cache: 'no-store',
       });
       if (r.status === 401 || r.status === 403) throw new Error('토큰 권한을 확인해주세요 (Contents: Read and write).');
-      if (r.status === 404) throw new Error('저장소나 branch를 찾을 수 없어요.');
+      if (r.status === 404) { const e = new Error('저장소나 branch를 찾을 수 없어요.'); e.status = 404; throw e; }
       if (!r.ok) { const e = new Error(`GitHub 응답 ${r.status}`); e.status = r.status; throw e; }
       return r.json();
     },
     async raw(path) {
       const r = await fetch(this.url(`/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(this.conn.branch)}`),
-        { headers: { ...this.headers(), Accept: 'application/vnd.github.raw+json' } });
-      if (!r.ok) throw new Error(`${path}: ${r.status}`);
+        { headers: { ...this.headers(), Accept: 'application/vnd.github.raw+json' }, cache: 'no-store' });
+      if (!r.ok) { const e = new Error(`${path}: ${r.status}`); e.status = r.status; throw e; }
       return r.json();
     },
     // One commit for any number of files (Git Data API). Retries once if the branch moved.
@@ -120,27 +145,44 @@
     },
   };
 
-  async function loadGitHub(conn) {
+  // bundle.json holds every file with its git blob sha; only files that changed since are fetched one by one
+  async function loadGitHub(conn, onProgress = () => {}) {
     gh.conn = conn;
     const tree = await gh.call('GET', `/git/trees/${encodeURIComponent(conn.branch)}?recursive=1`);
-    const paths = tree.tree.map(t => t.path);
-    const targets = paths.filter(p => /^(papers|authors|relations|claims)\/[^/]+\.json$/.test(p));
-    const results = {};
-    let i = 0;
-    const worker = async () => { while (i < targets.length) { const p = targets[i++]; results[p] = await gh.raw(p); } };
+    const blobs = tree.tree.filter(t => t.type === 'blob');
+    const paths = new Set(blobs.map(t => t.path));
+    let bundle = null;
+    if (paths.has('bundle.json')) { try { bundle = await gh.raw('bundle.json'); } catch { bundle = null; } }
+    const targets = blobs.filter(t => /^(papers|authors|relations|claims|requests)\/[^/]+\.json$/.test(t.path));
+    const entries = [];
+    const toFetch = [];
+    for (const t of targets) {
+      const e = bundle?.entries?.[t.path];
+      if (e && e.sha === t.sha) entries.push([t.path, e.data]); else toFetch.push(t.path);
+    }
+    let i = 0, done = 0;
+    const worker = async () => {
+      while (i < toFetch.length) {
+        const p = toFetch[i++];
+        entries.push([p, await gh.raw(p)]);
+        onProgress(++done, toFetch.length);
+      }
+    };
     await Promise.all(Array.from({ length: 8 }, worker));
-    const pick = dir => targets.filter(p => p.startsWith(dir + '/')).map(p => results[p]);
-    const config = paths.includes('config.json') ? await gh.raw('config.json') : null;
-    return { config, papers: pick('papers'), authors: pick('authors'), relations: pick('relations'), claims: pick('claims') };
+    const config = paths.has('config.json') ? await gh.raw('config.json') : null;
+    const ids = new Set(entries.filter(([p]) => p.startsWith('papers/')).map(([, d]) => d.id));
+    return { config, ...fromEntries(entries), excluded: (bundle?.excluded || []).filter(x => !ids.has(x.id)),
+      keywords: bundle?.keywords || {}, fetched: toFetch.length, bundled: !!bundle };
   }
 
   // ---------- saving ----------
   // items: [{dir, data}] ; updates local state first, then commits (github) or keeps in memory (demo)
-  async function save(items, message) {
+  async function save(items, message, { quiet = false } = {}) {
     for (const { dir, data } of items) {
       if (dir === 'papers') state.papers.set(data.id, data);
       else if (dir === 'authors') state.authors.set(data.id, data);
       else if (dir === 'claims') state.claims.set(data.id, data);
+      else if (dir === 'requests') state.requests.set(data.id, data);
       else if (dir === 'relations') {
         const k = state.relations.findIndex(r => r.id === data.id);
         k >= 0 ? (state.relations[k] = data) : state.relations.push(data);
@@ -149,7 +191,7 @@
     if (state.source !== 'github') { toast('데모 모드라서 저장되지 않아요 (새로고침하면 사라져요).'); return true; }
     try {
       await gh.commit(items.map(({ dir, data }) => ({ path: fileFor(dir, data.id), data })), message);
-      toast('저장했어요.');
+      if (!quiet) toast('저장했어요.');
       return true;
     } catch (err) {
       toast(`저장하지 못했어요: ${err.message}`, true);
@@ -157,14 +199,22 @@
     }
   }
 
-  function refresh() { renderSidebar(); renderGraph(); updateStatus(); }
+  function refresh() {
+    updateStatus();
+    if (state.tab === 'home') { renderSidebar(); renderGraph(); }
+    else if (state.tab === 'papers') renderList();
+    else renderTopics();
+  }
 
   function ingest(data) {
     state.config = data.config || { scope: '', topics: [] };
     state.papers = new Map(data.papers.map(p => [p.id, p]));
     state.authors = new Map(data.authors.map(a => [a.id, a]));
     state.claims = new Map(data.claims.map(c => [c.id, c]));
+    state.requests = new Map((data.requests || []).map(r => [r.id, r]));
     state.relations = data.relations;
+    state.excluded = data.excluded || [];
+    state.keywords = data.keywords || {};
     const topics = new Set(state.config.topics || []);
     for (const p of state.papers.values()) for (const t of p.tags?.topic || []) topics.add(t);
     AXES.topic.values = [...topics];
@@ -173,7 +223,8 @@
   }
 
   function updateStatus() {
-    $('#load-status').textContent = `논문 ${state.papers.size}편 · 연구 주제 ${state.claims.size}개 · 관계 ${state.relations.length}개`;
+    const hidden = [...state.papers.values()].filter(p => marksOf(p).hidden).length;
+    $('#load-status').textContent = `논문 ${state.papers.size}편${hidden ? ` (숨김 ${hidden})` : ''} · 연구 주제 ${state.claims.size}개 · 관계 ${state.relations.length}개`;
   }
 
   async function useSource(kind) {
@@ -181,7 +232,9 @@
     status.textContent = '불러오는 중...';
     try {
       const conn = store.get();
-      const data = kind === 'github' && conn ? await loadGitHub(conn) : await loadDemo();
+      const data = kind === 'github' && conn
+        ? await loadGitHub(conn, (d, n) => { status.textContent = `바뀐 파일 불러오는 중... ${d}/${n}`; })
+        : await loadDemo();
       state.source = kind === 'github' && conn ? 'github' : 'demo';
       ingest(data);
       $('#source-label').textContent = state.source === 'github' ? `저장소: ${conn.repo}` : '데모 데이터 (공개 논문만, 저장 안 됨)';
@@ -194,17 +247,34 @@
     }
   }
 
-  // ---------- filtering ----------
+  // ---------- tabs ----------
+  function setTab(tab, { push = true } = {}) {
+    state.tab = tab;
+    for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on', b.dataset.tab === tab);
+    $('#view-home').hidden = tab !== 'home';
+    $('#view-papers').hidden = tab !== 'papers';
+    $('#view-topics').hidden = tab !== 'topics';
+    if (push) history.replaceState(null, '', tab === 'home' ? location.pathname : `#${tab}`);
+    if (state.papers.size || state.source) refresh();
+  }
+  $('#tabs').onclick = e => { const b = e.target.closest('button[data-tab]'); if (b) setTab(b.dataset.tab); };
+
+  // ---------- graph filtering ----------
   function claimLinks(claimId) {
     return state.relations.filter(r => r.layer === '0-1' && r.to === claimId && r.type !== 'unrelated' && r.status !== 'rejected');
   }
 
+  // default graph: 좋아요 + 최근 4주 + ★ (unless 전체 논문 보기)
+  const inDefaultGraph = p => marksOf(p).liked || enteredAt(p) >= daysAgo(RECENT_DAYS) || isStarred(p);
+
   function visiblePapers() {
     const linked = state.selectedClaim ? new Set(claimLinks(state.selectedClaim).map(r => r.from)) : null;
     return [...state.papers.values()].filter(p => {
-      if (linked && !linked.has(p.id)) return false;
+      if (linked) return linked.has(p.id);
+      if (marksOf(p).hidden && !state.only.hidden) return false;
+      if (!state.only.all && !inDefaultGraph(p)) return false;
       if (state.only.industry && !p.meta?.industry) return false;
-      if (state.only.starred && !String(p.meta?.popularity || '').startsWith('★')) return false;
+      if (state.only.starred && !isStarred(p)) return false;
       if (state.only.nosummary && p.summary?.claim) return false;
       for (const [axis, def] of Object.entries(AXES)) {
         const allowed = state.filters[axis];
@@ -257,7 +327,6 @@
     const span = a => (Math.max(...a) - Math.min(...a)) || 1;
     const sx = (width * 0.8) / span(xs), sy = (height * 0.8) / span(ys);
     const pos = pts.map(([x, y]) => ({ x: (x - Math.min(...xs)) * sx + width * 0.1, y: (y - Math.min(...ys)) * sy + height * 0.1 }));
-    // identical tag sets land on one point: fan them out, then push apart pairs that are too close
     const minGap = 70;
     pos.forEach((p, i) => { p.x += Math.cos(i * 2.39996) * (i % 7) * 4; p.y += Math.sin(i * 2.39996) * (i % 7) * 4; });
     for (let it = 0; it < 250; it++) {
@@ -288,7 +357,11 @@
     if (state.selectedClaim) for (const r of claimLinks(state.selectedClaim)) claimType.set(r.from, r.type);
 
     for (const p of papers) {
-      const cls = ['paper', `m-${p.tags?.main_method || p.tags?.method?.[0] || 'other'}`, `s-${p.status}`];
+      const m = marksOf(p);
+      const cls = ['paper', `m-${p.tags?.main_method || p.tags?.method?.[0] || 'other'}`];
+      if (isNew(p)) cls.push('fresh');
+      if (m.liked) cls.push('liked');
+      if (m.hidden) cls.push('hidden-paper');
       const pop = p.meta?.popularity;
       if (pop === '★★') cls.push('pop-2'); else if (pop === '★') cls.push('pop-1');
       if (claimType.has(p.id)) cls.push(`c-${claimType.get(p.id)}`);
@@ -317,7 +390,6 @@
     return els;
   }
 
-  // white star glyph(s) drawn inside the node circle
   function starSvg(n) {
     const text = n === 2 ? '★★' : '★';
     const size = n === 2 ? 34 : 52;
@@ -329,7 +401,7 @@
   function metaLine(p) {
     const m = p.meta || {};
     const parts = [];
-    const venue = m.venue || p.venue || '', year = m.year || p.year;
+    const venue = venueOf(p), year = m.year || p.year;
     if (venue) parts.push(venue === 'arXiv' || !year ? venue : `${venue} ${year}`);
     if (m.institutions?.length) parts.push(m.institutions.slice(0, 2).join(', ') + (m.institutions.length > 2 ? ' 외' : ''));
     const date = String(m.published || p.published || '').slice(0, 7);
@@ -351,8 +423,9 @@
       ...['train', 'inference', 'eval', 'analysis', 'other'].map(method),
       { selector: 'node.pop-1', style: { width: 34, height: 34, 'background-image': starSvg(1), 'background-fit': 'contain', 'background-clip': 'none' } },
       { selector: 'node.pop-2', style: { width: 42, height: 42, 'background-image': starSvg(2), 'background-fit': 'contain', 'background-clip': 'none' } },
-      { selector: 'node.s-new', style: { 'border-color': css('--new'), 'border-width': 4 } },
-      { selector: 'node.s-hold', style: { 'border-color': css('--hold'), 'border-width': 3, 'border-style': 'dashed', opacity: 0.75 } },
+      { selector: 'node.fresh', style: { 'border-color': css('--new'), 'border-width': 4 } },
+      { selector: 'node.liked', style: { 'border-color': css('--liked'), 'border-width': 4 } },
+      { selector: 'node.hidden-paper', style: { opacity: 0.35 } },
       ...CLAIM_TYPES.map(ring),
       { selector: 'node.author', style: {
         shape: 'diamond', width: 18, height: 18, 'background-color': css('--author'),
@@ -370,7 +443,9 @@
     const els = buildElements();
     const empty = $('#empty');
     empty.hidden = els.some(e => e.group === 'nodes');
-    empty.textContent = state.papers.size ? '조건에 맞는 논문이 없어요.' : '아직 논문이 없어요. 왼쪽에서 읽기 목록을 가져오거나, 수집이 돌기를 기다려주세요.';
+    empty.textContent = state.papers.size
+      ? (state.only.all ? '조건에 맞는 논문이 없어요.' : '조건에 맞는 논문이 없어요. 왼쪽 "보기"에서 "전체 논문 보기"를 켜보세요.')
+      : '아직 논문이 없어요. 왼쪽에서 읽기 목록을 가져오거나, 수집이 돌기를 기다려주세요.';
     if (cy) cy.destroy();
     cy = cytoscape({
       container: $('#graph'), elements: els, style: graphStyle(), layout: { name: 'preset', fit: true, padding: 40 },
@@ -384,21 +459,24 @@
 
   function renderLegend() {
     const parts = ['train', 'inference', 'eval', 'analysis', 'other'].map(m => `<span><i class="dot" style="background:var(--m-${m})"></i>${m}</span>`);
-    parts.push('<span><i class="ring" style="border-color:var(--new)"></i>new</span>');
-    parts.push('<span><i class="ring" style="border-color:var(--hold);border-style:dashed"></i>보류</span>');
+    parts.push('<span><i class="ring" style="border-color:var(--liked)"></i>좋아요</span>');
+    parts.push(`<span><i class="ring" style="border-color:var(--new)"></i>new (${NEW_DAYS}일 이내)</span>`);
     parts.push('<span>★ 인용 속도 상위 20%</span><span>★★ 상위 5%</span>');
     if (state.selectedClaim) parts.push(...CLAIM_TYPES.map(t => `<span><i class="ring" style="border-color:var(--${t})"></i>${t}</span>`));
     $('#legend').innerHTML = parts.join('');
   }
 
-  // ---------- sidebar ----------
+  // ---------- home sidebar ----------
+  function claimLabel(c) {
+    return `${esc(c.text)}<span class="status">${c.origin === 'ai' ? 'AI 추천 · ' : ''}${esc(CLAIM_STATUS_KO[c.status] || c.status)} · v${esc(c.version)} · ${claimLinks(c.id).length}편</span>`;
+  }
+
   function renderSidebar() {
-    // claims
     const claims = $('#claims');
     const items = [`<li data-id="" class="${state.selectedClaim ? '' : 'active'}">전체 논문</li>`];
     for (const c of state.claims.values()) {
-      const n = claimLinks(c.id).length;
-      items.push(`<li data-id="${esc(c.id)}" class="${state.selectedClaim === c.id ? 'active' : ''}">${esc(c.text)}<span class="status">${esc(c.status)} · v${esc(c.version)} · ${n}편</span></li>`);
+      if (c.status === 'retired') continue;
+      items.push(`<li data-id="${esc(c.id)}" class="${state.selectedClaim === c.id ? 'active' : ''}">${claimLabel(c)}</li>`);
     }
     claims.innerHTML = items.join('');
     claims.onclick = e => {
@@ -408,7 +486,6 @@
       state.selectedClaim ? showClaim(state.selectedClaim) : showEmptyDetail();
     };
 
-    // relation toggles
     const rel = [
       ['extends', 'extends', 'var(--extends)', ''],
       ['conflicts', 'conflicts', 'var(--conflicts)', 'dash'],
@@ -419,21 +496,25 @@
       `<label><input type="checkbox" data-k="${k}" ${state.show[k] ? 'checked' : ''}><i class="swatch ${dash}" style="border-color:${color}"></i>${label}</label>`).join('');
     $('#relation-toggles').onchange = e => { state.show[e.target.dataset.k] = e.target.checked; renderGraph(); };
 
-    // view filters
-    const nInd = [...state.papers.values()].filter(p => p.meta?.industry).length;
-    const nStar = [...state.papers.values()].filter(p => String(p.meta?.popularity || '').startsWith('★')).length;
-    const noSum = [...state.papers.values()].filter(p => !p.summary?.claim);
+    const all = [...state.papers.values()];
+    const nDefault = all.filter(p => inDefaultGraph(p) && !marksOf(p).hidden).length;
+    const nHidden = all.filter(p => marksOf(p).hidden).length;
+    const nInd = all.filter(p => p.meta?.industry).length;
+    const nStar = all.filter(isStarred).length;
+    const noSum = all.filter(p => !p.summary?.claim);
     const nNoSum = noSum.length, nNoAbs = noSum.filter(p => !String(p.abstract || '').trim()).length;
     $('#view-toggles').innerHTML = `
+      <label><input type="checkbox" data-only="all" ${state.only.all ? 'checked' : ''}>전체 논문 보기<span class="count">${all.length}</span></label>
+      <p class="hint">${state.only.all ? '모든 논문을 보여줘요.' : `기본: 좋아요 + 최근 4주 + ★ 논문 (${nDefault}편)`}</p>
+      <label><input type="checkbox" data-only="hidden" ${state.only.hidden ? 'checked' : ''}>숨긴 논문도 보기<span class="count">${nHidden}</span></label>
       <label><input type="checkbox" data-only="industry" ${state.only.industry ? 'checked' : ''}>기업 논문만<span class="count">${nInd}</span></label>
       <label><input type="checkbox" data-only="starred" ${state.only.starred ? 'checked' : ''}>★ 이상만<span class="count">${nStar}</span></label>
       <label><input type="checkbox" data-only="nosummary" ${state.only.nosummary ? 'checked' : ''}>요약 없음만<span class="count">${nNoSum}</span></label>
       ${nNoSum ? `<p class="hint">요약 없음 ${nNoSum}편 중 초록 없음 ${nNoAbs}편 (초록이 없으면 자동 요약이 안 돼요)</p>` : ''}`;
-    $('#view-toggles').onchange = e => { state.only[e.target.dataset.only] = e.target.checked; renderGraph(); };
+    $('#view-toggles').onchange = e => { state.only[e.target.dataset.only] = e.target.checked; renderSidebar(); renderGraph(); };
 
-    // tag filters
     const counts = {};
-    for (const p of state.papers.values()) for (const [axis, def] of Object.entries(AXES)) {
+    for (const p of all) for (const [axis, def] of Object.entries(AXES)) {
       const v = p.tags?.[axis]; const vals = def.multi ? (v || []) : (v ? [v] : []);
       for (const x of vals) counts[`${axis}:${x}`] = (counts[`${axis}:${x}`] || 0) + 1;
     }
@@ -455,17 +536,49 @@
     };
   }
 
-  // ---------- detail panel ----------
+  // ---------- shared pieces ----------
   const field = (label, text) => `<div class="field"><b>${label}</b>${text ? `<p>${esc(text)}</p>` : '<p class="empty-text">아직 없음</p>'}</div>`;
   const nameOf = id => state.papers.get(id)?.title || state.claims.get(id)?.text || id;
-  const options = (values, selected) => values.map(v => `<option value="${esc(v)}" ${v === selected ? 'selected' : ''}>${esc(v)}</option>`).join('');
+  const options = (values, selected, labels = {}) => values.map(v => `<option value="${esc(v)}" ${v === selected ? 'selected' : ''}>${esc(labels[v] || v)}</option>`).join('');
 
+  function markButtons(p) {
+    const m = marksOf(p);
+    const b = (k, on, label) => `<button type="button" class="mark ${on ? 'on' : ''}" data-action="mark" data-mark="${k}" data-id="${esc(p.id)}" aria-pressed="${on}">${label}</button>`;
+    return b('liked', m.liked, m.liked ? '♥ 좋아요' : '♡ 좋아요') + b('bookmarked', m.bookmarked, '북마크') + b('hidden', m.hidden, m.hidden ? '숨김 해제' : '숨김');
+  }
+
+  function requestButtons(p) {
+    const pend = [...state.requests.values()].filter(r => r.paper === p.id);
+    const busy = k => pend.some(r => r.kind === k && r.status !== 'failed');
+    return `
+      <button type="button" data-action="paper-resummarize" data-id="${esc(p.id)}" ${p.abstract ? '' : 'disabled title="초록이 없어서 요약할 수 없어요"'}>재요약</button>
+      <button type="button" data-action="request" data-kind="relations" data-id="${esc(p.id)}" ${busy('relations') ? 'disabled' : ''}>${busy('relations') ? '관계 찾는 중...' : '관계 찾기'}</button>
+      <button type="button" data-action="request" data-kind="topics" data-id="${esc(p.id)}" ${busy('topics') ? 'disabled' : ''}>${busy('topics') ? '추천 받는 중...' : '연구 주제 추천'}</button>`;
+  }
+
+  function requestNotes(p) {
+    return [...state.requests.values()].filter(r => r.paper === p.id).map(r => {
+      const what = r.kind === 'topics' ? '연구 주제 추천' : '관계 찾기';
+      return r.status === 'failed'
+        ? `<p class="rel duplicate">${what} 실패: ${esc(r.error || '')} <button type="button" class="mini" data-action="request-retry" data-id="${esc(r.id)}">다시 요청</button></p>`
+        : `<p class="hint">${what} 요청 중 (${esc(r.created_at)}). 보통 1~3분 걸려요.</p>`;
+    }).join('');
+  }
+
+  const memoForm = (kind, id, memo, rows = 4) => `
+    <form class="edit memo" data-form="memo" data-kind="${kind}" data-id="${esc(id)}">
+      <textarea name="memo" rows="${rows}" placeholder="메모 (나만 보는 생각, 읽은 소감, 아이디어)">${esc(memo)}</textarea>
+      <div class="actions"><button type="submit" class="mini">메모 저장</button></div>
+    </form>`;
+
+  // ---------- detail panel (home) ----------
   function showEmptyDetail() {
     $('#detail').innerHTML = '<p class="hint">논문 노드를 누르거나, 왼쪽에서 연구 주제를 고르면 여기에 내용이 보여요.</p>';
   }
 
   function relCard(r, otherId) {
-    const target = state.papers.has(otherId) ? `<a href="#" data-paper="${esc(otherId)}">${esc(nameOf(otherId))}</a>` : esc(nameOf(otherId));
+    const target = state.papers.has(otherId) ? `<a href="#" data-paper="${esc(otherId)}">${esc(nameOf(otherId))}</a>`
+      : state.claims.has(otherId) ? `<a href="#" data-claim="${esc(otherId)}">${esc(nameOf(otherId))}</a>` : esc(nameOf(otherId));
     const actions = r.status === 'new'
       ? `<div class="actions"><button type="button" data-action="rel-approve" data-id="${esc(r.id)}">승인</button><button type="button" class="quiet" data-action="rel-reject" data-id="${esc(r.id)}">거절</button></div>`
       : '';
@@ -475,6 +588,11 @@
       <p class="meta">${esc(r.reason)}${r.model ? ` · ${esc(r.model)}` : ''}</p>
       ${actions}
     </div>`;
+  }
+
+  function paperHead(p) {
+    const m = marksOf(p);
+    return `<div class="meta-line">${isStarred(p) ? `<span class="star">${esc(p.meta.popularity)}</span> ` : ''}${esc(metaLine(p) || `${p.venue || ''} ${p.year || ''}`)}${isNew(p) ? ' <span class="chip new">new</span>' : ''}${p.meta?.industry ? ' <span class="chip">기업</span>' : ''}${m.bookmarked ? ' <span class="chip">북마크</span>' : ''}${m.hidden ? ' <span class="chip">숨김</span>' : ''}</div>`;
   }
 
   function showPaper(id, editing = false) {
@@ -501,15 +619,15 @@
     const targets = [...state.papers.values()].filter(x => x.id !== id);
     $('#detail').innerHTML = `
       <h3>${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>` : esc(p.title)}</h3>
-      <div class="meta-line">${p.meta?.popularity?.startsWith('★') ? `<span class="star">${esc(p.meta.popularity)}</span> ` : ''}${esc(metaLine(p) || `${p.venue || ''} ${p.year || ''}`)}${p.meta?.popularity === 'new' ? ' <span class="chip">신규</span>' : ''}${p.meta?.industry ? ' <span class="chip">기업</span>' : ''}</div>
+      ${paperHead(p)}
       ${authors.length ? `<div class="meta">${esc(authors.join(', '))}</div>` : ''}
-      <div class="chips"><span class="badge ${esc(p.status)}">${esc(p.status)}</span>${chips.map(c => `<span class="chip">${esc(c)}</span>`).join('')}</div>
-      <div class="actions">
-        <button type="button" data-action="paper-confirm" data-id="${esc(id)}" ${p.status === 'confirmed' ? 'disabled' : ''}>확인 완료</button>
-        <button type="button" data-action="paper-hold" data-id="${esc(id)}" ${p.status === 'hold' ? 'disabled' : ''}>보류</button>
-        <button type="button" class="push-right" data-action="paper-resummarize" data-id="${esc(id)}" ${p.abstract ? '' : 'disabled title="초록이 없어서 요약할 수 없어요"'}>재요약</button>
-      </div>
+      <div class="chips">${chips.map(c => `<span class="chip">${esc(c)}</span>`).join('')}</div>
+      <div class="actions wrap">${markButtons(p)}</div>
+      <div class="actions wrap">${requestButtons(p)}</div>
+      ${requestNotes(p)}
       ${pv.screen_reason ? `<p class="meta">스크리닝: ${esc(pv.screen_reason)}</p>` : ''}
+      <h4>메모</h4>
+      ${memoForm('paper', id, p.memo)}
       <h4>요약</h4>
       ${summary}
       ${p.abstract ? `<details class="abstract"><summary>초록 보기</summary><p>${esc(p.abstract)}</p></details>` : ''}
@@ -533,7 +651,6 @@
     syncRelationTypes();
   }
 
-  // relation type choices depend on whether the target is a claim or a paper
   function syncRelationTypes() {
     const f = $('#detail form[data-form="relation"]'); if (!f) return;
     const isClaim = state.claims.has(f.to.value);
@@ -547,11 +664,27 @@
       <h4>논문 ${mine.length}편</h4>${mine.map(p => `<div class="rel"><a href="#" data-paper="${esc(p.id)}">${esc(p.title)}</a></div>`).join('')}`;
   }
 
+  // open a paper on the 홈 tab and centre it in the graph
+  function focusPaper(id) {
+    if (state.tab !== 'home') setTab('home');
+    const p = state.papers.get(id);
+    if (p && !visiblePapers().some(x => x.id === id)) { state.only.all = true; if (marksOf(p).hidden) state.only.hidden = true; state.selectedClaim = null; renderSidebar(); renderGraph(); }
+    showPaper(id);
+    if (cy) { cy.$(':selected').unselect(); const n = cy.getElementById(id); if (n.nonempty()) { n.select(); cy.animate({ center: { eles: n } }, { duration: 250 }); } }
+  }
+
+  // ---------- claims (연구 주제) ----------
+  const claimTarget = () => (state.tab === 'topics' ? $('#topic-detail') : $('#detail'));
+
   function claimForm(c) {
     return `
       <form class="edit" data-form="claim" data-id="${esc(c?.id || '')}">
-        <label>Claim (한 줄)<textarea name="text" rows="2" required>${esc(c?.text)}</textarea></label>
-        <label>상태<select name="status">${options(CLAIM_STATUS, c?.status || 'candidate')}</select></label>
+        <label>연구 주제 (한 줄)<textarea name="text" rows="2" required>${esc(c?.text)}</textarea></label>
+        <label>상태<select name="status">${options(CLAIM_STATUS, c?.status || 'candidate', CLAIM_STATUS_KO)}</select></label>
+        <label>근거<textarea name="basis" rows="2">${esc(c?.basis)}</textarea></label>
+        <label>빈 곳<textarea name="gap" rows="2">${esc(c?.gap)}</textarea></label>
+        <label>첫 실험<textarea name="first_experiment" rows="2">${esc(c?.first_experiment)}</textarea></label>
+        ${c ? '' : `<label>메모<textarea name="memo" rows="3"></textarea></label>`}
         ${c ? '<label>바꾼 이유 (문장을 바꿀 때만)<input name="reason"></label>' : ''}
         <div class="actions"><button type="submit">${c ? '저장' : '만들기'}</button><button type="button" class="quiet" data-action="claim-cancel" data-id="${esc(c?.id || '')}">취소</button></div>
       </form>`;
@@ -559,17 +692,22 @@
 
   function showClaim(id, mode = 'view') {
     const c = state.claims.get(id); if (!c) return;
-    if (mode === 'edit') { $('#detail').innerHTML = `<h3>연구 주제 수정</h3><p class="meta">문장을 바꾸면 v${c.version + 1}이 되고, 지금 문장은 버전 기록에 남아요.</p>${claimForm(c)}`; return; }
+    const box = claimTarget();
+    if (mode === 'edit') { box.innerHTML = `<h3>연구 주제 수정</h3><p class="meta">문장을 바꾸면 v${c.version + 1}이 되고, 지금 문장은 버전 기록에 남아요.</p>${claimForm(c)}`; return; }
     const links = state.relations.filter(r => r.layer === '0-1' && r.to === id && r.status !== 'rejected');
     const dup = links.filter(r => r.type === 'duplicate');
-    $('#detail').innerHTML = `
+    box.innerHTML = `
       <h3>${esc(c.text)}</h3>
-      <div class="meta">${esc(c.status)} · v${esc(c.version)} <button type="button" class="mini" data-action="claim-edit" data-id="${esc(id)}">수정</button></div>
+      <div class="meta">${c.origin === 'ai' ? `<span class="chip ai">AI 추천</span> ` : ''}${esc(CLAIM_STATUS_KO[c.status] || c.status)} · v${esc(c.version)}${c.created_at ? ` · ${esc(c.created_at)}` : ''}
+        <button type="button" class="mini" data-action="claim-edit" data-id="${esc(id)}">수정</button></div>
+      ${c.origin === 'ai' && c.status === 'candidate' ? `<div class="actions"><button type="button" data-action="claim-status" data-status="active" data-id="${esc(id)}">진행할래요</button><button type="button" class="quiet" data-action="claim-status" data-status="retired" data-id="${esc(id)}">접기</button></div>` : ''}
       ${dup.length ? `<p class="rel duplicate"><b>duplicate ${dup.length}건</b>: 이미 이 주제를 다룬 논문이 있을 수 있어요.</p>` : ''}
+      ${c.basis || c.gap || c.first_experiment ? `${field('근거', c.basis)}${field('빈 곳', c.gap)}${field('첫 실험', c.first_experiment)}` : ''}
+      ${c.model ? `<p class="meta">추천 모델: ${esc(c.model)}</p>` : ''}
+      <h4>메모</h4>
+      ${memoForm('claim', id, c.memo)}
       <h4>연결된 논문</h4>
       ${links.map(r => relCard(r, r.from)).join('') || '<p class="hint">아직 없어요. 논문을 눌러 "관계 직접 추가"로 연결할 수 있어요.</p>'}
-      <h4>버전 기록</h4>
-      ${(c.history || []).slice().reverse().map(h => `<div class="rel"><b>v${esc(h.version)}</b> ${esc(h.text)}<p class="meta">${esc(h.changed_at || '')} ${esc(h.reason || '')}</p></div>`).join('') || '<p class="hint">이전 버전 없음</p>'}
       <h4>내 실험</h4>
       ${(c.experiments || []).map(x => `<div class="rel"><b>${esc(x.title)}</b> <span class="meta">${esc(x.date || '')}</span>${field('설정', x.setup)}${field('결과', x.result)}</div>`).join('') || '<p class="hint">기록된 실험 없음</p>'}
       <details class="add-rel">
@@ -582,8 +720,225 @@
           <div class="actions"><button type="submit">추가</button></div>
         </form>
       </details>
+      <h4>버전 기록</h4>
+      ${(c.history || []).slice().reverse().map(h => `<div class="rel"><b>v${esc(h.version)}</b> ${esc(h.text)}<p class="meta">${esc(h.changed_at || '')} ${esc(h.reason || '')}</p></div>`).join('') || '<p class="hint">이전 버전 없음</p>'}
     `;
   }
+
+  function newClaimForm() {
+    claimTarget().innerHTML = `<h3>새 연구 주제</h3>${claimForm(null)}`;
+  }
+
+  // ---------- 연구 주제 tab ----------
+  function renderTopics() {
+    const t = state.topics;
+    const all = [...state.claims.values()];
+    const count = f => all.filter(f).length;
+    const chip = (key, val, label, n) => `<button type="button" class="mini ${t[key] === val ? 'on' : ''}" data-tf="${key}" data-v="${esc(val)}">${label}${n != null ? ` ${n}` : ''}</button>`;
+    $('#topic-head').innerHTML = `
+      <div class="row">
+        <div class="chipset">${chip('status', '', '전체', all.length)}${CLAIM_STATUS.map(s => chip('status', s, CLAIM_STATUS_KO[s], count(c => c.status === s))).join('')}</div>
+        <div class="chipset">${chip('origin', '', '모두')}${chip('origin', 'manual', '직접', count(c => c.origin !== 'ai'))}${chip('origin', 'ai', 'AI 추천', count(c => c.origin === 'ai'))}</div>
+        <button type="button" data-action="claim-new" class="push-right">+ 새 연구 주제</button>
+      </div>`;
+    const rows = all.filter(c => (!t.status || c.status === t.status) && (!t.origin || (t.origin === 'ai' ? c.origin === 'ai' : c.origin !== 'ai')))
+      .sort((a, b) => (CLAIM_STATUS.indexOf(a.status) - CLAIM_STATUS.indexOf(b.status)) || String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    $('#topic-list').innerHTML = rows.map(c => `
+      <div class="row-card ${t.selected === c.id ? 'active' : ''}" data-claim-row="${esc(c.id)}">
+        <div class="row-title">${c.origin === 'ai' ? '<span class="chip ai">AI 추천</span> ' : ''}${esc(c.text)}</div>
+        <div class="meta">${esc(CLAIM_STATUS_KO[c.status] || c.status)} · v${esc(c.version)} · 연결 논문 ${claimLinks(c.id).length}편 · 실험 ${(c.experiments || []).length}개${c.created_at ? ` · ${esc(c.created_at)}` : ''}</div>
+        ${c.gap ? `<div class="row-text">빈 곳: ${esc(c.gap)}</div>` : ''}
+        ${c.memo ? `<div class="memo-preview">${esc(c.memo)}</div>` : ''}
+      </div>`).join('') || '<p class="hint">연구 주제가 없어요. "+ 새 연구 주제"로 만들거나, 논문에서 "연구 주제 추천"을 눌러보세요.</p>';
+    if (t.selected && state.claims.has(t.selected)) showClaim(t.selected);
+  }
+
+  $('#topic-head').addEventListener('click', e => {
+    const b = e.target.closest('button[data-tf]'); if (!b) return;
+    state.topics[b.dataset.tf] = b.dataset.v; renderTopics();
+  });
+  $('#topic-list').addEventListener('click', e => {
+    const row = e.target.closest('[data-claim-row]'); if (!row) return;
+    state.topics.selected = row.dataset.claimRow; renderTopics();
+  });
+
+  // ---------- 논문 목록 tab ----------
+  function listPapers() {
+    const L = state.list;
+    const q = L.q.trim().toLowerCase();
+    const rows = [...state.papers.values()].filter(p => {
+      const m = marksOf(p);
+      if (m.hidden && !L.hidden) return false;
+      if (L.liked && !m.liked) return false;
+      if (L.bookmarked && !m.bookmarked) return false;
+      if (L.industry && !p.meta?.industry) return false;
+      if (L.starred && !isStarred(p)) return false;
+      if (L.nosummary && p.summary?.claim) return false;
+      if (L.venue && venueOf(p) !== L.venue) return false;
+      if (L.org && !(p.meta?.institutions || []).includes(L.org)) return false;
+      const tags = new Set(tagList(p));
+      for (const t of L.tags) if (!tags.has(t)) return false;
+      if (q && !`${p.title} ${(p.author_names || []).join(' ')} ${p.summary?.claim || ''} ${p.memo || ''}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    const cites = p => (p.meta?.citations ?? -1);
+    const speed = p => (p.meta?.citations ? (p.meta.cites_per_month ?? 0) : -1); // no citations -> bottom
+    const by = {
+      entered: (a, b) => enteredAt(b).localeCompare(enteredAt(a)) || String(b.published || '').localeCompare(String(a.published || '')),
+      citations: (a, b) => cites(b) - cites(a),
+      popularity: (a, b) => speed(b) - speed(a) || cites(b) - cites(a),
+    }[L.sort];
+    return rows.sort(by);
+  }
+
+  function countBy(values) {
+    const m = new Map();
+    for (const v of values) if (v) m.set(v, (m.get(v) || 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }
+
+  function keywordTable() {
+    const k = state.keywords || {};
+    const total = k.total || {}, last = k.last_run || {};
+    const rows = Object.entries(total).sort((a, b) => (b[1].included || 0) - (a[1].included || 0));
+    if (!rows.length) return '<p class="hint">아직 통계가 없어요. 다음 주간 실행부터 쌓여요.</p>';
+    const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '-');
+    return `<table class="kw"><thead><tr><th>키워드</th><th title="${esc(k.last_run_date || '')}">이번 실행</th><th>누적</th><th>포함 비율</th></tr></thead><tbody>
+      ${rows.map(([kw, v]) => `<tr><td>${esc(kw)}</td><td>${last[kw] ? `${last[kw].included}/${last[kw].collected}` : '-'}</td><td>${v.included}/${v.collected}</td><td>${pct(v.included, v.collected)}</td></tr>`).join('')}
+    </tbody></table><p class="hint">포함/수집. 수집은 했지만 거의 포함되지 않는 키워드는 config.json에서 빼도 돼요.</p>`;
+  }
+
+  function renderListFilters() {
+    const L = state.list;
+    const all = [...state.papers.values()];
+    const venues = countBy(all.map(venueOf));
+    const orgs = countBy(all.flatMap(p => p.meta?.institutions || []));
+    const tagCounts = countBy(all.flatMap(tagList));
+    const chk = (k, label, n) => `<label><input type="checkbox" data-lf="${k}" ${L[k] ? 'checked' : ''}>${label}${n != null ? `<span class="count">${n}</span>` : ''}</label>`;
+    $('#list-filters').innerHTML = `
+      <section class="panel">
+        <h2>보기</h2>
+        <div class="seg">
+          <button type="button" data-lv="papers" class="${L.view === 'papers' ? 'on' : ''}">논문 ${all.length}</button>
+          <button type="button" data-lv="excluded" class="${L.view === 'excluded' ? 'on' : ''}">제외됨 ${state.excluded.length}</button>
+        </div>
+        ${L.view === 'excluded' ? '<p class="hint">스크리닝에서 최근 4주 동안 제외된 후보예요. 잘못 빠진 논문은 "포함시키기"로 넣을 수 있어요.</p>' : ''}
+      </section>
+      ${L.view === 'papers' ? `
+      <section class="panel">
+        <h2>정렬</h2>
+        <select data-ls="sort">${options(['entered', 'citations', 'popularity'], L.sort, { entered: '들어온 날짜', citations: '인용수', popularity: '인기 (인용 속도)' })}</select>
+      </section>
+      <section class="panel toggles">
+        <h2>표시</h2>
+        ${chk('liked', '♥ 좋아요만', all.filter(p => marksOf(p).liked).length)}
+        ${chk('bookmarked', '북마크만', all.filter(p => marksOf(p).bookmarked).length)}
+        ${chk('starred', '★ 이상만', all.filter(isStarred).length)}
+        ${chk('industry', '기업 논문만', all.filter(p => p.meta?.industry).length)}
+        ${chk('nosummary', '요약 없음만', all.filter(p => !p.summary?.claim).length)}
+        ${chk('hidden', '숨긴 논문도 보기', all.filter(p => marksOf(p).hidden).length)}
+      </section>
+      <section class="panel">
+        <h2>학회</h2>
+        <select data-ls="venue"><option value="">전체</option>${venues.map(([v, n]) => `<option value="${esc(v)}" ${L.venue === v ? 'selected' : ''}>${esc(v)} (${n})</option>`).join('')}</select>
+      </section>
+      <section class="panel">
+        <h2>소속</h2>
+        <select data-ls="org"><option value="">전체</option>${orgs.map(([v, n]) => `<option value="${esc(v)}" ${L.org === v ? 'selected' : ''}>${esc(v)} (${n})</option>`).join('')}</select>
+      </section>
+      <section class="panel">
+        <h2>태그 <span class="hint">(누른 태그를 모두 가진 논문)</span></h2>
+        <div class="chipset">${tagCounts.map(([t, n]) => `<button type="button" class="mini ${L.tags.has(t) ? 'on' : ''}" data-ltag="${esc(t)}">${esc(t)} ${n}</button>`).join('')}</div>
+      </section>` : ''}
+      <section class="panel">
+        <details class="tag-group"><summary>키워드 통계</summary>${keywordTable()}</details>
+      </section>`;
+  }
+
+  function paperRow(p) {
+    const m = marksOf(p), s = p.summary || {};
+    const open = state.list.open.has(p.id);
+    return `<div class="row-card ${m.hidden ? 'dim' : ''}" data-row="${esc(p.id)}">
+      <div class="row-title">
+        <span class="heart ${m.liked ? 'on' : ''}" title="좋아요">${m.liked ? '♥' : '♡'}</span>
+        ${isStarred(p) ? `<span class="star">${esc(p.meta.popularity)}</span>` : ''}
+        ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>` : esc(p.title)}
+        ${isNew(p) ? '<span class="chip new">new</span>' : ''}${m.bookmarked ? '<span class="chip">북마크</span>' : ''}${m.hidden ? '<span class="chip">숨김</span>' : ''}
+      </div>
+      <div class="meta">${esc(metaLine(p))}${enteredAt(p) ? ` · 들어온 날 ${esc(enteredAt(p).slice(5).replace('-', '.'))}` : ''}</div>
+      <div class="chips">${tagList(p).map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>
+      ${s.claim ? `<div class="row-text">${esc(s.claim)}</div>` : '<div class="row-text empty-text">요약 없음</div>'}
+      ${p.memo && !open ? `<div class="memo-preview">${esc(p.memo)}</div>` : ''}
+      ${open ? `<div class="row-more">
+        ${field('조건', s.condition)}${field('빈 곳', s.gap)}
+        <div class="actions wrap">${markButtons(p)}</div>
+        <div class="actions wrap">${requestButtons(p)}<button type="button" class="quiet" data-action="focus" data-id="${esc(p.id)}">그래프에서 보기</button></div>
+        ${requestNotes(p)}
+        <b class="label">메모</b>${memoForm('paper', p.id, p.memo, 5)}
+      </div>` : ''}
+      <button type="button" class="row-toggle quiet mini" data-action="row-toggle" data-id="${esc(p.id)}">${open ? '접기' : '펼치기'}</button>
+    </div>`;
+  }
+
+  function excludedRow(x) {
+    const date = String(x.published || '').slice(0, 7).replace('-', '.');
+    return `<div class="row-card" data-ex="${esc(x.id)}">
+      <div class="row-title">${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a>` : esc(x.title)}</div>
+      <div class="meta">${esc([x.venue, date, `제외 ${String(x.screened_at || '').slice(5).replace('-', '.')}`].filter(Boolean).join(' · '))}</div>
+      <div class="row-text">제외 이유: ${esc(x.screen_reason || '-')}</div>
+      ${x.abstract ? `<details class="abstract"><summary>초록 보기</summary><p>${esc(x.abstract)}</p></details>` : ''}
+      <div class="actions"><button type="button" data-action="include" data-id="${esc(x.id)}">포함시키기</button></div>
+    </div>`;
+  }
+
+  const PAGE = 100;
+  let listLimit = PAGE;
+  function renderList() {
+    renderListFilters();
+    const L = state.list;
+    if (L.view === 'excluded') {
+      const rows = state.excluded.filter(x => !state.papers.has(x.id));
+      $('#list-head').innerHTML = `<div class="row"><b>제외됨 ${rows.length}편</b><input type="search" data-ls="q" placeholder="제목 검색" value="${esc(L.q)}"></div>`;
+      const q = L.q.trim().toLowerCase();
+      $('#paper-list').innerHTML = rows.filter(x => !q || String(x.title).toLowerCase().includes(q)).map(excludedRow).join('')
+        || '<p class="hint">최근 4주 동안 제외된 후보가 없어요. (주간 실행이 bundle.json을 만든 뒤부터 보여요.)</p>';
+      return;
+    }
+    const rows = listPapers();
+    $('#list-head').innerHTML = `<div class="row"><b>${rows.length}편</b><input type="search" data-ls="q" placeholder="제목, 저자, 주장, 메모 검색" value="${esc(L.q)}"></div>`;
+    $('#paper-list').innerHTML = rows.slice(0, listLimit).map(paperRow).join('')
+      + (rows.length > listLimit ? `<button type="button" class="mini-wide" data-action="more">더 보기 (${rows.length - listLimit}편 남음)</button>` : '')
+      || '<p class="hint">조건에 맞는 논문이 없어요.</p>';
+  }
+
+  function rerenderRow(id) {
+    const el = document.querySelector(`#paper-list [data-row="${CSS.escape(id)}"]`);
+    const p = state.papers.get(id);
+    if (el && p) el.outerHTML = paperRow(p);
+  }
+
+  $('#list-filters').addEventListener('change', e => {
+    const L = state.list, t = e.target;
+    if (t.dataset.lf) L[t.dataset.lf] = t.checked;
+    else if (t.dataset.ls) L[t.dataset.ls] = t.value;
+    listLimit = PAGE; renderList();
+  });
+  $('#list-filters').addEventListener('click', e => {
+    const v = e.target.closest('button[data-lv]'), tg = e.target.closest('button[data-ltag]');
+    if (v) { state.list.view = v.dataset.lv; state.list.q = ''; renderList(); }
+    if (tg) { const s = state.list.tags; s.has(tg.dataset.ltag) ? s.delete(tg.dataset.ltag) : s.add(tg.dataset.ltag); listLimit = PAGE; renderList(); }
+  });
+  let searchTimer;
+  $('#list-head').addEventListener('input', e => {
+    if (e.target.dataset.ls !== 'q') return;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.list.q = e.target.value;
+      const pos = e.target.selectionStart;
+      renderList();
+      const box = $('#list-head input[data-ls="q"]'); box.focus(); box.setSelectionRange(pos, pos);
+    }, 250);
+  });
 
   // ---------- re-summarize from the browser ----------
   // Same prompt as pipeline/summarize.py. Keep the two in sync.
@@ -664,20 +1019,62 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
       p.provenance = { ...(p.provenance || {}), summary_model: reply.model, summary_from: 'abstract',
         summarized_at: today(), summary_check: Object.values(summary).every(Boolean) ? 'ok' : 'incomplete' };
       await save([{ dir: 'papers', data: p }], `Re-summarize ${id}`);
-      showPaper(id);
+      afterPaperChange(id);
     } catch (err) {
       toast(`재요약하지 못했어요: ${err.message}`, true);
       if (document.contains(btn)) { btn.disabled = false; btn.textContent = '재요약'; }
     }
   }
 
+  // ---------- requests processed by GitHub Actions (관계 찾기, 연구 주제 추천) ----------
+  async function makeRequest(kind, paperId) {
+    if (state.source !== 'github') { toast('이 기능은 내 저장소를 연결해야 쓸 수 있어요.', true); return; }
+    const r = { id: newId('req'), kind, paper: paperId, status: 'pending', created_at: today() };
+    const ok = await save([{ dir: 'requests', data: r }], `Request ${kind} for ${paperId}`, { quiet: true });
+    if (!ok) { state.requests.delete(r.id); return; }
+    toast(kind === 'topics' ? '연구 주제 추천을 요청했어요. 1~3분 뒤 연구 주제 탭에 후보가 생겨요.' : '관계 찾기를 요청했어요. 1~3분 뒤 이 논문의 관계에 후보가 생겨요.');
+    afterPaperChange(paperId);
+    watchRequest(r);
+  }
+
+  // check every 30 s until the request file is gone (processed), then reload
+  function watchRequest(r, tries = 20) {
+    setTimeout(async () => {
+      if (state.source !== 'github') return;
+      try {
+        const cur = await gh.raw(fileFor('requests', r.id));
+        if (cur.status === 'failed') { state.requests.set(r.id, cur); toast(`요청이 실패했어요: ${cur.error || ''}`, true); afterPaperChange(r.paper); return; }
+        if (tries > 1) watchRequest(r, tries - 1);
+      } catch (e) {
+        if (e.status === 404) {
+          toast(r.kind === 'topics' ? '연구 주제 추천 결과가 들어왔어요.' : '관계 찾기 결과가 들어왔어요.');
+          const keep = { tab: state.tab, claim: state.selectedClaim };
+          await useSource('github');
+          if (keep.tab === 'topics') setTab('topics'); else if (keep.tab === 'home') showPaper(r.paper);
+          else renderList();
+        } else if (tries > 1) watchRequest(r, tries - 1);
+      }
+    }, 30000);
+  }
+
   // ---------- actions ----------
-  async function setPaperStatus(id, status) {
+  function afterPaperChange(id) {
+    if (state.tab === 'home') { renderSidebar(); renderGraph(); showPaper(id); }
+    else if (state.tab === 'papers') rerenderRow(id);
+    updateStatus();
+  }
+
+  async function toggleMark(id, mark) {
     const p = structuredClone(state.papers.get(id));
-    p.status = status;
-    p.provenance = { ...(p.provenance || {}), ...(status === 'confirmed' ? { confirmed_at: today() } : {}) };
-    await save([{ dir: 'papers', data: p }], `${status === 'confirmed' ? 'Confirm' : 'Hold'} ${id}`);
-    refresh(); showPaper(id);
+    const m = marksOf(p);
+    delete p.status;
+    m[mark] = !m[mark];
+    if (mark === 'liked') { if (m.liked) m.liked_at = today(); else delete m.liked_at; }
+    p.marks = m;
+    const label = { liked: '좋아요', bookmarked: '북마크', hidden: '숨김' }[mark];
+    await save([{ dir: 'papers', data: p }], `${m[mark] ? '' : 'Undo '}${label}: ${id}`, { quiet: true });
+    if (mark === 'hidden' && m.hidden) toast('숨겼어요. "숨긴 논문도 보기"를 켜면 다시 보여요.');
+    if (state.tab === 'papers' && mark === 'hidden') { renderList(); updateStatus(); } else afterPaperChange(id);
   }
 
   async function setRelationStatus(id, status) {
@@ -685,39 +1082,79 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     r.status = status;
     await save([{ dir: 'relations', data: r }], `${status === 'approved' ? 'Approve' : 'Reject'} ${id}`);
     refresh();
-    state.papers.has(r.from) && !state.selectedClaim ? showPaper(r.from) : showClaim(r.to);
+    if (state.tab === 'topics') showClaim(r.to);
+    else state.papers.has(r.from) && !state.selectedClaim ? showPaper(r.from) : showClaim(r.to);
   }
 
-  $('#detail').addEventListener('click', e => {
-    const link = e.target.closest('a[data-paper]');
-    if (link) {
-      e.preventDefault();
-      const id = link.dataset.paper;
-      showPaper(id);
-      if (cy) { cy.$(':selected').unselect(); const n = cy.getElementById(id); if (n.nonempty()) { n.select(); cy.animate({ center: { eles: n } }, { duration: 250 }); } }
-      return;
+  async function includeExcluded(id) {
+    const x = state.excluded.find(e => e.id === id); if (!x) return;
+    const p = {
+      id: x.id, title: x.title, authors: [], author_names: x.authors || [], ids: x.ids || {}, published: x.published || '',
+      year: x.year ?? null, venue: x.venue || '', url: x.url || '', abstract: x.abstract || '',
+      tags: { method: ['other'], main_method: 'other', goal: [], modal: 'text', setting: 'standalone', topic: [] },
+      summary: { claim: '', condition: '', gap: '' }, marks: { liked: false, bookmarked: false, hidden: false }, memo: '',
+      entered_at: today(), source: 'include',
+      provenance: { screen_model: x.screen_model || '', screen_reason: `사람이 포함시킴 (원래 제외 이유: ${x.screen_reason || '-'})`,
+        found_via: x.sources || [], created_at: today(), needs_tags: true },
+    };
+    if (await save([{ dir: 'papers', data: p }], `Include ${id} (excluded by screening)`)) {
+      toast('포함시켰어요. 태그와 요약은 다음 주간 실행 때 채워져요.');
+      renderList();
     }
+  }
+
+  document.addEventListener('click', e => {
+    const link = e.target.closest('a[data-paper]');
+    if (link) { e.preventDefault(); focusPaper(link.dataset.paper); return; }
+    const clink = e.target.closest('a[data-claim]');
+    if (clink) { e.preventDefault(); setTab('topics'); state.topics.selected = clink.dataset.claim; renderTopics(); return; }
     const b = e.target.closest('button[data-action]'); if (!b) return;
     const { action, id } = b.dataset;
-    if (action === 'paper-confirm') setPaperStatus(id, 'confirmed');
-    else if (action === 'paper-hold') setPaperStatus(id, 'hold');
+    if (action === 'mark') toggleMark(id, b.dataset.mark);
     else if (action === 'paper-resummarize') resummarize(id, b);
+    else if (action === 'request') makeRequest(b.dataset.kind, id);
+    else if (action === 'request-retry') {
+      const r = { ...state.requests.get(id), status: 'pending', error: '', created_at: today() };
+      save([{ dir: 'requests', data: r }], `Retry request ${id}`, { quiet: true }).then(ok => { if (ok) { afterPaperChange(r.paper); watchRequest(r); } });
+    }
     else if (action === 'summary-edit') showPaper(id, true);
     else if (action === 'paper-view') showPaper(id);
     else if (action === 'rel-approve') setRelationStatus(id, 'approved');
     else if (action === 'rel-reject') setRelationStatus(id, 'rejected');
     else if (action === 'claim-edit') showClaim(id, 'edit');
-    else if (action === 'claim-cancel') id ? showClaim(id) : showEmptyDetail();
+    else if (action === 'claim-new') newClaimForm();
+    else if (action === 'claim-cancel') id ? showClaim(id) : (state.tab === 'topics' ? ($('#topic-detail').innerHTML = '') : showEmptyDetail());
+    else if (action === 'claim-status') {
+      const c = { ...structuredClone(state.claims.get(id)), status: b.dataset.status };
+      save([{ dir: 'claims', data: c }], `Claim ${id}: ${c.status}`).then(() => { refresh(); showClaim(id); });
+    }
+    else if (action === 'row-toggle') { const o = state.list.open; o.has(id) ? o.delete(id) : o.add(id); rerenderRow(id); }
+    else if (action === 'focus') focusPaper(id);
+    else if (action === 'include') includeExcluded(id);
+    else if (action === 'more') { listLimit += PAGE; renderList(); }
   });
 
-  $('#detail').addEventListener('change', e => { if (e.target.name === 'to') syncRelationTypes(); });
+  document.addEventListener('change', e => { if (e.target.closest('#detail') && e.target.name === 'to') syncRelationTypes(); });
 
-  $('#detail').addEventListener('submit', async e => {
+  document.addEventListener('submit', async e => {
+    const f = e.target;
+    if (!f.dataset.form) return;
     e.preventDefault();
-    const f = e.target, id = f.dataset.id, kind = f.dataset.form;
+    const id = f.dataset.id, kind = f.dataset.form;
     const btn = f.querySelector('button[type="submit"]'); if (btn) btn.disabled = true;
     try {
-      if (kind === 'summary') {
+      if (kind === 'memo') {
+        const memo = f.memo.value.replace(/\s+$/, '');
+        if (f.dataset.kind === 'paper') {
+          const p = structuredClone(state.papers.get(id)); p.memo = memo;
+          if (await save([{ dir: 'papers', data: p }], `Memo: ${id}`)) {
+            if (state.tab === 'papers') rerenderRow(id);
+          }
+        } else {
+          const c = structuredClone(state.claims.get(id)); c.memo = memo;
+          if (await save([{ dir: 'claims', data: c }], `Memo: ${id}`) && state.tab === 'topics') renderTopics();
+        }
+      } else if (kind === 'summary') {
         const p = structuredClone(state.papers.get(id));
         p.summary = { claim: f.claim.value.trim(), condition: f.condition.value.trim(), gap: f.gap.value.trim() };
         p.provenance = { ...(p.provenance || {}), summary_model: 'manual' };
@@ -731,6 +1168,7 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
         refresh(); showPaper(id);
       } else if (kind === 'claim') {
         const text = f.text.value.trim(), status = f.status.value;
+        const extra = { basis: f.basis.value.trim(), gap: f.gap.value.trim(), first_experiment: f.first_experiment.value.trim() };
         let c;
         if (id) {
           c = structuredClone(state.claims.get(id));
@@ -738,13 +1176,14 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
             c.history = [...(c.history || []), { version: c.version, text: c.text, changed_at: today(), reason: f.reason?.value.trim() || '' }];
             c.version += 1; c.text = text;
           }
-          c.status = status;
+          Object.assign(c, { status, ...extra });
         } else {
-          c = { id: newId('claim'), text, status, version: 1, history: [], experiments: [] };
+          c = { id: newId('claim'), text, status, version: 1, origin: 'manual', created_at: today(), memo: f.memo?.value.trim() || '',
+            ...extra, history: [], experiments: [] };
         }
         await save([{ dir: 'claims', data: c }], `${id ? 'Update' : 'Create'} claim ${c.id}`);
-        state.selectedClaim = c.id;
-        refresh(); showClaim(c.id);
+        if (state.tab === 'topics') { state.topics.selected = c.id; renderTopics(); }
+        else { state.selectedClaim = c.id; refresh(); showClaim(c.id); }
       } else if (kind === 'experiment') {
         const c = structuredClone(state.claims.get(id));
         c.experiments = [...(c.experiments || []), { title: f.title.value.trim(), date: f.date.value, setup: f.setup.value.trim(), result: f.result.value.trim() }];
@@ -756,25 +1195,23 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     }
   });
 
-  $('#btn-new-claim').onclick = () => { $('#detail').innerHTML = `<h3>새 연구 주제</h3>${claimForm(null)}`; };
+  $('#btn-new-claim').onclick = newClaimForm;
 
   // Import the public reading list (sample papers + authors only, never demo claims or relations)
   $('#btn-import').onclick = async () => {
     if (state.source !== 'github') return;
     const btn = $('#btn-import'); btn.disabled = true;
     try {
-      const index = await demoJSON('index.json');
-      const [papers, authors] = await Promise.all([
-        Promise.all(index.papers.map(f => demoJSON(`papers/${f}`))),
-        Promise.all(index.authors.map(f => demoJSON(`authors/${f}`))),
-      ]);
+      const demo = await loadDemo();
       const items = [
-        ...authors.filter(a => !state.authors.has(a.id)).map(data => ({ dir: 'authors', data })),
-        ...papers.filter(p => !state.papers.has(p.id)).map(p => ({ dir: 'papers', data: { ...p, status: 'new', provenance: { summary_model: 'none', created_at: today() } } })),
+        ...demo.authors.filter(a => !state.authors.has(a.id)).map(data => ({ dir: 'authors', data })),
+        ...demo.papers.filter(p => !state.papers.has(p.id)).map(p => ({ dir: 'papers', data: { ...p,
+          marks: { liked: false, bookmarked: false, hidden: false }, memo: '', entered_at: today(),
+          provenance: { summary_model: 'none', created_at: today() } } })),
       ];
       if (!items.length) { toast('이미 다 들어 있어요.'); return; }
       if (await save(items, `Import reading list (${items.length} files)`)) {
-        for (const p of papers) for (const t of p.tags?.topic || []) if (!AXES.topic.values.includes(t)) { AXES.topic.values.push(t); state.filters.topic.add(t); }
+        for (const p of demo.papers) for (const t of p.tags?.topic || []) if (!AXES.topic.values.includes(t)) { AXES.topic.values.push(t); state.filters.topic.add(t); }
         refresh();
       }
     } catch (err) {
@@ -805,7 +1242,9 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
   $('#btn-logout').onclick = () => { store.clear(); llmKeys.clearAll(); gh.conn = null; useSource('demo'); };
 
   let resizeTimer;
-  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => cy && renderGraph(), 200); });
+  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => cy && state.tab === 'home' && renderGraph(), 200); });
 
+  const startTab = ['papers', 'topics'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'home';
+  setTab(startTab, { push: false });
   useSource(store.get() ? 'github' : 'demo');
 })();

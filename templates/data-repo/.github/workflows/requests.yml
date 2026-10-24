@@ -1,0 +1,23 @@
+# Runs when the web page saves a request (관계 찾기, 연구 주제 추천) under requests/.
+# Copy this file into your data repository next to weekly.yml.
+name: requests
+
+on:
+  push:
+    paths:
+      - "requests/*.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: requests
+  cancel-in-progress: false
+
+jobs:
+  run:
+    uses: hanslelee/research-dump/.github/workflows/requests.yml@main
+    with:
+      code_ref: main
+    secrets: inherit

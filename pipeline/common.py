@@ -28,6 +28,52 @@ def read_json(path: Path, default):
     return json.loads(path.read_text()) if path.exists() else default
 
 
+# ---------- paper marks (좋아요 / 북마크 / 숨김) ----------
+MARKS = ("liked", "bookmarked", "hidden")
+
+
+def new_marks() -> dict:
+    return {"liked": False, "bookmarked": False, "hidden": False}
+
+
+def normalize_paper(p: dict, today: str) -> bool:
+    """Bring an older paper file up to the current shape. Returns True if anything changed.
+
+    status "confirmed" -> 좋아요, "hold" -> 북마크, "new" -> nothing marked.
+    """
+    before = json.dumps(p, sort_keys=True)
+    marks = {**new_marks(), **(p.get("marks") or {})}
+    status = p.pop("status", None)
+    pv = p.get("provenance") or {}
+    if status == "confirmed" and not marks["liked"]:
+        marks["liked"] = True
+        marks["liked_at"] = pv.get("confirmed_at") or pv.get("created_at") or today
+    if status == "hold":
+        marks["bookmarked"] = True
+    p["marks"] = marks
+    p.setdefault("memo", "")
+    if not p.get("entered_at"):
+        p["entered_at"] = pv.get("created_at") or today
+    return json.dumps(p, sort_keys=True) != before
+
+
+def is_liked(p: dict) -> bool:
+    return bool((p.get("marks") or {}).get("liked")) or p.get("status") == "confirmed"
+
+
+def is_starred(p: dict) -> bool:
+    return str((p.get("meta") or {}).get("popularity") or "").startswith("★")
+
+
+def topic_set(p: dict) -> set:
+    return set((p.get("tags") or {}).get("topic") or [])
+
+
+def matched_keywords(text: str, keywords: list) -> list:
+    t = " " + re.sub(r"[^a-z0-9]+", " ", (text or "").lower()) + " "
+    return [k for k in keywords if " " + re.sub(r"[^a-z0-9]+", " ", k.lower()).strip() + " " in t]
+
+
 def clean_tags(raw: dict, topics: list) -> dict:
     """Coerce model output into allowed tag values."""
     raw = raw or {}

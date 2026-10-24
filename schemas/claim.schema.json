@@ -3,22 +3,55 @@
   "$id": "claim.schema.json",
   "title": "Claim (layer 1 node, managed by a person)",
   "type": "object",
-  "required": ["id", "text", "status", "version"],
+  "required": [
+    "id",
+    "text",
+    "status",
+    "version"
+  ],
   "properties": {
-    "id": { "type": "string", "pattern": "^claim:" },
-    "text": { "type": "string", "description": "The research claim in one line" },
-    "status": { "enum": ["candidate", "active", "hold", "retired"] },
-    "version": { "type": "integer", "minimum": 1 },
+    "id": {
+      "type": "string",
+      "pattern": "^claim:"
+    },
+    "text": {
+      "type": "string",
+      "description": "The research claim in one line"
+    },
+    "status": {
+      "enum": [
+        "candidate",
+        "active",
+        "hold",
+        "retired"
+      ]
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
     "history": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["version", "text"],
+        "required": [
+          "version",
+          "text"
+        ],
         "properties": {
-          "version": { "type": "integer" },
-          "text": { "type": "string" },
-          "changed_at": { "type": "string", "format": "date" },
-          "reason": { "type": "string" }
+          "version": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "changed_at": {
+            "type": "string",
+            "format": "date"
+          },
+          "reason": {
+            "type": "string"
+          }
         }
       }
     },
@@ -27,14 +60,60 @@
       "description": "Your own experiments. Kept only in the private data repository.",
       "items": {
         "type": "object",
-        "required": ["title"],
+        "required": [
+          "title"
+        ],
         "properties": {
-          "title": { "type": "string" },
-          "date": { "type": "string" },
-          "setup": { "type": "string" },
-          "result": { "type": "string" }
+          "title": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "setup": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          }
         }
       }
+    },
+    "memo": {
+      "type": "string"
+    },
+    "origin": {
+      "enum": [
+        "manual",
+        "ai"
+      ],
+      "description": "ai = 연구 주제 추천 버튼이 만든 후보"
+    },
+    "basis": {
+      "type": "string",
+      "description": "근거: which findings meet to raise this question"
+    },
+    "gap": {
+      "type": "string",
+      "description": "빈 곳: what nobody has done yet"
+    },
+    "first_experiment": {
+      "type": "string",
+      "description": "첫 실험: the smallest experiment that would test it"
+    },
+    "papers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Papers used to propose it"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date"
+    },
+    "model": {
+      "type": "string"
     }
   }
 }

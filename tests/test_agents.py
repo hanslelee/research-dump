@@ -57,7 +57,8 @@ class AgentsTest(unittest.TestCase):
         added = screen.run(self.d, "2026-10-15", log=lambda *_: None, chat=fake_screen)
         self.assertEqual([p["id"] for p in added], ["arxiv:1"])
         p = json.loads((self.d / "papers" / "arxiv_1.json").read_text())
-        self.assertEqual(p["status"], "new")
+        self.assertEqual(p["marks"], {"liked": False, "bookmarked": False, "hidden": False})
+        self.assertEqual(p["memo"], "")
         self.assertEqual(p["author_names"], ["A", "B"])
         self.assertEqual(p["tags"], {"method": ["inference"], "main_method": "inference", "goal": ["harmlessness"],
                                      "modal": "text", "setting": "rag", "topic": ["jailbreak"]})

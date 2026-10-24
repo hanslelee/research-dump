@@ -25,10 +25,16 @@
     "condition": "",
     "gap": ""
   },
-  "status": "hold",
   "source": "manual",
   "provenance": {
     "summary_model": "manual",
     "created_at": "2026-10-14"
-  }
+  },
+  "marks": {
+    "liked": false,
+    "bookmarked": true,
+    "hidden": false
+  },
+  "memo": "",
+  "entered_at": "2026-10-14"
 }

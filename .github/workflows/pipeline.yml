@@ -55,6 +55,12 @@ jobs:
         run: |
           git config user.name "research-dump bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # bundle.json is rebuilt at the end and the web page corrects stale entries, so either side may win
+          echo "bundle.json merge=keep" >> .git/info/attributes
+          git config merge.keep.driver true
+
+      - name: Update old data files to the current shape
+        run: python code/pipeline/migrate.py --data data
 
       - name: Validate data
         run: python code/pipeline/validate.py data
@@ -82,6 +88,11 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: python code/pipeline/screen.py --data data
 
+      - name: Merge duplicate papers
+        continue-on-error: true
+        timeout-minutes: 5
+        run: python code/pipeline/dedupe.py --data data
+
       - name: Venue, citations, affiliations
         continue-on-error: true
         timeout-minutes: 15
@@ -98,6 +109,14 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: python code/pipeline/summarize.py --data data
 
+      - name: Compare agent (relations)
+        continue-on-error: true
+        timeout-minutes: 25
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python code/pipeline/compare.py --data data
+
       - name: Telegram notification
         continue-on-error: true
         env:
@@ -105,7 +124,10 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python code/pipeline/notify.py --data data
 
-      # Next: compare agent
+      - name: Bundle all files for the web page
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: python code/pipeline/bundle.py --data data
 
       - name: Commit changes to the data repository
         if: ${{ !cancelled() }}

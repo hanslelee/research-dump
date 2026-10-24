@@ -6,7 +6,7 @@
 
 Sources (each one is optional and skipped when its settings or key are missing):
   arxiv     new preprints matching config.collect.arxiv_categories x arxiv_keywords
-  s2        new papers citing the papers you confirmed (needs S2_API_KEY)
+  s2        new papers citing the papers you liked or that are popular (★) (needs S2_API_KEY)
   openalex  new papers by authors at config.collect.openalex_institutions (needs OPENALEX_API_KEY)
 
 Writes candidates/<date>.json and state/collect.json. Never touches papers/.
@@ -26,13 +26,16 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import is_liked, is_starred  # noqa: E402
+
 USER_AGENT = "research-dump/0.1 (+https://github.com/hanslelee/research-dump)"
 DEFAULT_COLLECT = {
     "days": 8,
     "arxiv_categories": ["cs.CL", "cs.LG", "cs.CV", "cs.AI", "cs.CR"],
     "arxiv_keywords": [],
     "s2_search": True,
-    "s2_citations_of": "confirmed",
+    "s2_citations_of": "liked",  # "liked" = 좋아요 + ★ papers, "all" = every paper
     "openalex_institutions": [],
     "openalex_keywords": [],
     "max_per_source": 400,
@@ -216,7 +219,8 @@ def collect_s2(cfg, papers, since, log):
     if not key:
         log("s2: skipped (S2_API_KEY not set)")
         return []
-    seeds = [p for p in papers.values() if cfg["s2_citations_of"] == "all" or p.get("status") == "confirmed"]
+    every = cfg["s2_citations_of"] == "all"
+    seeds = [p for p in papers.values() if every or is_liked(p) or is_starred(p)]
     items = []
     for p in seeds:
         ref = s2_ref(p)
@@ -236,7 +240,7 @@ def collect_s2(cfg, papers, since, log):
         time.sleep(1.1)  # 1 request per second
         if len(items) >= cfg["max_per_source"]:
             break
-    log(f"s2: {len(items)} from {len(seeds)} confirmed papers")
+    log(f"s2: {len(items)} citing papers from {len(seeds)} liked or ★ papers")
     return items
 
 

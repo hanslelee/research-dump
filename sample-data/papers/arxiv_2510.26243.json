@@ -28,10 +28,17 @@
     "condition": "",
     "gap": ""
   },
-  "status": "confirmed",
   "source": "manual",
   "provenance": {
     "summary_model": "manual",
     "created_at": "2026-10-14"
-  }
+  },
+  "marks": {
+    "liked": true,
+    "bookmarked": false,
+    "hidden": false,
+    "liked_at": "2026-10-14"
+  },
+  "memo": "",
+  "entered_at": "2026-10-14"
 }

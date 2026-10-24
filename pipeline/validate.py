@@ -41,7 +41,12 @@ def main(folder: Path) -> int:
         if t.get("setting") not in SETTING: err(pid, f"setting {t.get('setting')}")
         extra = set(t.get("topic", [])) - topics
         if extra: warnings.append(f"{pid}: topic not in config.topics: {sorted(extra)}")
-        if p.get("status") not in {"new", "hold", "confirmed"}: err(pid, f"status {p.get('status')}")
+        if "status" in p:
+            warnings.append(f"{pid}: old status field (migrate.py converts it to marks)")
+        else:
+            m = p.get("marks")
+            if not isinstance(m, dict) or any(not isinstance(m.get(k), bool) for k in ("liked", "bookmarked", "hidden")):
+                err(pid, f"marks {m}")
         for a in p.get("authors", []):
             if a not in authors: err(pid, f"unknown author {a}")
 
