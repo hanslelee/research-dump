@@ -8,6 +8,7 @@ Types (paper -> claim, layer "0-1"):
   conflict   the paper's finding contradicts the claim
   duplicate  the paper already did (most of) this research topic
   motivates  the paper raises the question or provides the method the claim builds on
+Candidates: the 20 papers closest to the topic by embedding (embed.py), then the model judges each.
 Strict: when unsure the answer is "none". Each relation keeps one evidence sentence in "reason".
 """
 import argparse
@@ -19,6 +20,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import embed  # noqa: E402
 import llm  # noqa: E402
 from compare import BATCH, agent_for, describe  # noqa: E402
 from common import clean_text, file_for, load_dir, write_json  # noqa: E402
@@ -50,8 +52,12 @@ def rel_id(paper_id, claim_id):
     return "rel:" + hashlib.sha1(f"{paper_id}|{claim_id}|claim".encode()).hexdigest()[:12]
 
 
-def link(data_dir: Path, claim_id: str, today: str, log=print, chat=None, paper_ids=None):
-    """Compare one claim with papers (all papers, or only paper_ids). Pairs that already have a relation are skipped."""
+def link(data_dir: Path, claim_id: str, today: str, log=print, chat=None, paper_ids=None, embed_fn=None):
+    """Compare one claim with papers. Pairs that already have a relation are skipped.
+
+    paper_ids given: only those papers. Otherwise the 20 papers closest to the claim by embedding
+    (all papers when no embedding model is available).
+    """
     chat = chat or llm.chat
     config = json.loads((data_dir / "config.json").read_text())
     agent = agent_for(config, log)
@@ -66,6 +72,15 @@ def link(data_dir: Path, claim_id: str, today: str, log=print, chat=None, paper_
     linked = {r["from"] for r in load_dir(data_dir / "relations").values() if r.get("layer") == "0-1" and r.get("to") == claim_id}
     cands = [p for p in papers.values() if p["id"] not in linked and (paper_ids is None or p["id"] in paper_ids)
              and (paper_ids is not None or not (p.get("marks") or {}).get("hidden"))]
+    if paper_ids is None:
+        vectors = embed.ensure(data_dir, config, log, embed_fn=embed_fn, papers=papers)
+        qv = embed.query(config, embed.claim_text(claim), embed_fn) if vectors else None
+        if qv:
+            keep = set(embed.nearest(qv, vectors, [p["id"] for p in cands], embed.TOP_K))
+            cands = [p for p in cands if p["id"] in keep]
+            log(f"claimrel: {len(cands)} closest papers by embedding")
+        else:
+            log("claimrel: no embeddings, comparing with every paper")
     system = SYSTEM.format(language=language)
     written = []
     for i in range(0, len(cands), BATCH):

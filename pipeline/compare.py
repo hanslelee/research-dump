@@ -6,8 +6,9 @@
 Weekly run (after the summary agent):
   - papers that entered in the last 7 days  vs  papers you liked
   - papers you liked since the last run     vs  all papers
-  Only pairs that share at least one topic tag are compared.
-관계 찾기 (one paper): that paper vs every other paper, no topic filter.
+관계 찾기 (one paper): that paper vs every other paper.
+In every case only the 20 closest papers by embedding (embed.py) are sent to the model.
+Without an embedding model: weekly pairs must share a topic tag, 관계 찾기 compares with all papers.
 
 Strict: when unsure the answer is "none". No limit on how many relations; each keeps one evidence sentence
 in "reason". New relations get status "new" and wait for 승인/거절 on the web page.
@@ -23,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import checkpoint  # noqa: E402
+import embed  # noqa: E402
 import llm  # noqa: E402
 from common import clean_text, file_for, is_liked, load_dir, read_json, topic_set, write_json  # noqa: E402
 
@@ -115,7 +117,15 @@ def compare_target(data_dir, agent, chat, language, target, cands, today, log):
     return written, calls
 
 
-def run(data_dir: Path, today: str, log=print, chat=None):
+def closest(target, cands, vectors):
+    """The embed.TOP_K candidates closest to target, or None when there are no vectors for target."""
+    if not vectors or target["id"] not in vectors:
+        return None
+    keep = set(embed.nearest(vectors[target["id"]], vectors, [c["id"] for c in cands], embed.TOP_K))
+    return [c for c in cands if c["id"] in keep]
+
+
+def run(data_dir: Path, today: str, log=print, chat=None, embed_fn=None):
     chat = chat or llm.chat
     config = json.loads((data_dir / "config.json").read_text())
     agent = agent_for(config, log)
@@ -134,13 +144,20 @@ def run(data_dir: Path, today: str, log=print, chat=None):
     liked = [p for p in papers.values() if is_liked(p)]
     visible = lambda p: not (p.get("marks") or {}).get("hidden")
 
+    vectors = embed.ensure(data_dir, config, log, embed_fn=embed_fn, papers=papers)
+
+    def pick(target, pool):
+        pool = [q for q in pool if q["id"] != target["id"] and visible(q)]
+        near = closest(target, pool, vectors)
+        return near if near is not None else [q for q in pool if topic_set(target) & topic_set(q)]
+
     jobs = []  # (target, candidates, state set to mark)
     for p in papers.values():
         if p["id"] not in done_new and (p.get("entered_at") or "") >= week_ago and visible(p):
-            jobs.append((p, [q for q in liked if q["id"] != p["id"] and topic_set(p) & topic_set(q)], done_new))
+            jobs.append((p, pick(p, liked), done_new))
     for p in liked:
         if p["id"] not in done_liked:
-            jobs.append((p, [q for q in papers.values() if q["id"] != p["id"] and visible(q) and topic_set(p) & topic_set(q)], done_liked))
+            jobs.append((p, pick(p, list(papers.values())), done_liked))
 
     def save_state():
         st.update(done_new=sorted(done_new), done_liked=sorted(done_liked), checked=sorted(checked))
@@ -172,8 +189,9 @@ def run(data_dir: Path, today: str, log=print, chat=None):
     return written
 
 
-def find_for(data_dir: Path, paper_id: str, today: str, log=print, chat=None):
-    """관계 찾기: one paper vs every other paper (no topic filter). Pairs that already have a relation are skipped."""
+def find_for(data_dir: Path, paper_id: str, today: str, log=print, chat=None, embed_fn=None):
+    """관계 찾기: one paper vs the 20 closest papers by embedding (all papers without embeddings).
+    Pairs that already have a relation are skipped."""
     chat = chat or llm.chat
     config = json.loads((data_dir / "config.json").read_text())
     agent = agent_for(config, log)
@@ -187,8 +205,11 @@ def find_for(data_dir: Path, paper_id: str, today: str, log=print, chat=None):
     target = papers[paper_id]
     cands = [q for q in papers.values() if q["id"] != paper_id and pair_key(paper_id, q["id"]) not in known
              and not (q.get("marks") or {}).get("hidden")]
-    # the closest papers first, in case the run is cut short
-    cands.sort(key=lambda q: -len(topic_set(target) & topic_set(q)))
+    near = closest(target, cands, embed.ensure(data_dir, config, log, embed_fn=embed_fn, papers=papers))
+    if near is not None:
+        cands = near
+    else:  # the closest papers first, in case the run is cut short
+        cands.sort(key=lambda q: -len(topic_set(target) & topic_set(q)))
     written, calls = compare_target(data_dir, agent, chat, language, target, cands, today, log)
     log(f"관계 찾기 {paper_id}: {len(written)} relations from {len(cands)} papers ({calls} calls)")
     return written

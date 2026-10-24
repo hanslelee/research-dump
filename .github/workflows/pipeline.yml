@@ -109,6 +109,14 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: python code/pipeline/summarize.py --data data
 
+      - name: Embeddings (for vector search)
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python code/pipeline/embed.py --data data
+
       - name: Compare agent (relations)
         continue-on-error: true
         timeout-minutes: 25

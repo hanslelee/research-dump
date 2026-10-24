@@ -15,6 +15,7 @@ import claimrel as claimrel_mod  # noqa: E402
 import collect  # noqa: E402
 import compare  # noqa: E402
 import dedupe  # noqa: E402
+import embed  # noqa: E402
 import migrate  # noqa: E402
 import notify  # noqa: E402
 import requests_run  # noqa: E402
@@ -401,3 +402,46 @@ class WebSearchTest(Base):
         requests_run.run(self.d, "2026-10-24", log=lambda *_: None, chat=fake_all,
                          find=lambda q, log: (_ for _ in ()).throw(AssertionError("should not search")))
         self.assertIn("arxiv:2312.06681", self.load("papers"))
+
+
+def word_vec(texts):
+    """Fake embedding: one dimension per known word."""
+    vocab = ["sycophancy", "steering", "cooking", "probe", "calibration", "robots"]
+    return [[float(w in t.lower()) + 0.01 for w in vocab] for t in texts]
+
+
+class EmbedTest(Base):
+    def test_cache_and_nearest(self):
+        for i in range(25):
+            self.put("papers", paper(f"arxiv:c{i}", f"Cooking robots {i}"))
+        for i in range(3):
+            self.put("papers", paper(f"arxiv:s{i}", f"Sycophancy steering probe {i}"))
+        calls = []
+        fn = lambda texts: (calls.append(len(texts)), word_vec(texts))[1]
+        vecs = embed.ensure(self.d, CONFIG, log=lambda *_: None, embed_fn=fn)
+        self.assertEqual(len(vecs), 28)
+        self.assertEqual(sum(calls), 28)
+        embed.ensure(self.d, CONFIG, log=lambda *_: None, embed_fn=fn)
+        self.assertEqual(sum(calls), 28)  # nothing changed -> nothing embedded again
+        q = embed.normalize(word_vec(["sycophancy steering probe"])[0])
+        self.assertEqual(sorted(embed.nearest(q, vecs, list(vecs), 3)), ["arxiv:s0", "arxiv:s1", "arxiv:s2"])
+
+    def test_claim_search_sends_only_top_20(self):
+        self.put("claims", {"id": "claim:g", "text": "Sycophancy steering with a probe", "status": "candidate", "version": 1})
+        for i in range(30):
+            self.put("papers", paper(f"arxiv:c{i}", f"Cooking robots {i}"))
+        self.put("papers", paper("arxiv:s0", "Sycophancy steering probe CAA"))
+        sent = []
+        chat = lambda a, s, u, **kw: (sent.extend(p["id"] for p in json.loads(u)["papers"]), fake_claimrel(a, s, u))[1]
+        rels = claimrel_mod.link(self.d, "claim:g", "2026-10-24", log=lambda *_: None, chat=chat, embed_fn=word_vec)
+        self.assertEqual(len(sent), 20)
+        self.assertIn("arxiv:s0", sent)
+        self.assertEqual([r["from"] for r in rels], ["arxiv:s0"])
+
+    def test_weekly_compare_uses_vectors_not_tags(self):
+        self.put("papers", paper("arxiv:new", "Sycophancy steering builds", ["steering"], entered="2026-10-22"))
+        self.put("papers", paper("arxiv:old", "Sycophancy probe base", ["calibration"], liked=True))
+        asked = []
+        chat = lambda a, s, u, **kw: (asked.append((json.loads(u)["target"]["id"], [c["id"] for c in json.loads(u)["candidates"]])), fake_compare(a, s, u))[1]
+        compare.run(self.d, "2026-10-24", log=lambda *_: None, chat=chat, embed_fn=word_vec)
+        self.assertIn(("arxiv:new", ["arxiv:old"]), asked)  # no shared topic tag, still compared

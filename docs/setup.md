@@ -66,7 +66,7 @@ Each run writes `candidates/<date>.json` and remembers what it has seen in `stat
 ## 5. What runs when
 
 Weekly (`weekly.yml`): migrate old files → validate → collect → abstracts → screening → merge duplicates →
-venue/citations/affiliations → summary → compare (relations) → Telegram → `bundle.json` → commit.
+venue/citations/affiliations → summary → embeddings → compare (relations) → Telegram → `bundle.json` → commit.
 
 On request (`requests.yml`, starts when the web page saves a file under `requests/`):
 
@@ -79,6 +79,11 @@ On request (`requests.yml`, starts when the web page saves a file under `request
 | 연구 주제 추천 | that paper + up to 4 papers linked by approved extends/conflicts (or, if none, liked papers with a shared topic). arXiv PDFs are downloaded and their text sent; 3 candidates appear in the 연구 주제 tab | `llm.recommend` (falls back to `llm.summary`) |
 
 Memos are never sent to a model.
+
+**Vector search.** 저장소에서 관련 논문 찾기, 관계 찾기 and the weekly compare first pick the 20 closest papers by
+embedding (`embeddings/papers.json`, title + summary), and only those go to the model. Embedding model:
+`llm.embed` in config.json, or `gemini-embedding-001` on the `llm.summary` Gemini endpoint when unset.
+Without one, everything still works by comparing with all papers (slower).
 
 `bundle.json` packs every paper, author, claim and relation (with each file's git sha) so the web page loads in one request.
 Files changed after it was built are fetched one by one, so it is never stale.
