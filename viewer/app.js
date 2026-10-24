@@ -507,6 +507,7 @@
       <div class="actions">
         <button type="button" data-action="paper-confirm" data-id="${esc(id)}" ${p.status === 'confirmed' ? 'disabled' : ''}>확인 완료</button>
         <button type="button" data-action="paper-hold" data-id="${esc(id)}" ${p.status === 'hold' ? 'disabled' : ''}>보류</button>
+        <button type="button" class="push-right" data-action="paper-resummarize" data-id="${esc(id)}" ${p.abstract ? '' : 'disabled title="초록이 없어서 요약할 수 없어요"'}>재요약</button>
       </div>
       ${pv.screen_reason ? `<p class="meta">스크리닝: ${esc(pv.screen_reason)}</p>` : ''}
       <h4>요약</h4>
@@ -584,6 +585,92 @@
     `;
   }
 
+  // ---------- re-summarize from the browser ----------
+  // Same prompt as pipeline/summarize.py. Keep the two in sync.
+  const SUMMARY_PROMPT = lang => `You summarize one research paper for a researcher looking for research gaps.
+Use only the title and abstract given. Do not invent results that are not stated.
+Write in ${lang}.
+
+Fields:
+- claim: what the paper shows or proposes, one or two sentences, with the main number if the abstract gives one.
+- condition: the scope under which the claim holds: models, data, modality, setting, assumptions. Never leave this empty; if the abstract does not say, write what is missing.
+- gap: what the paper does not cover or leaves open, one or two sentences. Start with "(저자)" if the abstract itself states this limitation, otherwise "(추론)".
+
+Plain text only: no LaTeX, no markdown.
+Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
+
+  const llmKeyName = name => `research-dump.llmkey.${name}`;
+  const llmKeys = {
+    get(name) { try { return localStorage.getItem(llmKeyName(name)) || ''; } catch { return ''; } },
+    set(name, v) { try { localStorage.setItem(llmKeyName(name), v); } catch { /* ignore */ } },
+    clearAll() { try { Object.keys(localStorage).filter(k => k.startsWith('research-dump.llmkey.')).forEach(k => localStorage.removeItem(k)); } catch { /* ignore */ } },
+  };
+
+  const cleanText = t => String(t || '')
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+    .replace(/\\[A-Za-z]+\*?\{([^{}]+)\}/g, '$1')
+    .replace(/\\([A-Za-z]+)\*?(\{\})?/g, '$1')
+    .replace(/\$/g, '').replace(/\{\}/g, '')
+    .replace(/\s+/g, ' ').trim();
+
+  function parseJsonReply(text) {
+    const t = String(text).trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
+    const tries = [t];
+    const i = t.indexOf('{'), j = t.lastIndexOf('}');
+    if (i >= 0 && j > i) tries.push(t.slice(i, j + 1));
+    for (const c of tries) for (const v of [c, c.replace(/,\s*([}\]])/g, '$1')]) { try { return JSON.parse(v); } catch { /* next */ } }
+    throw new Error('요약 결과를 읽지 못했어요');
+  }
+
+  async function callLLM(cfg, system, user) {
+    let key = llmKeys.get(cfg.key_name);
+    if (!key) {
+      key = (prompt(`${cfg.key_name} 값을 입력해주세요.\n이 브라우저에만 저장되고 ${new URL(cfg.base_url).host} 말고는 보내지 않아요. 로그아웃하면 지워져요.`) || '').trim();
+      if (!key) throw new Error('키가 없어서 취소했어요');
+      llmKeys.set(cfg.key_name, key);
+    }
+    const models = [cfg.model, cfg.fallback_model].filter(m => m && m !== 'SET-ME');
+    if (!models.length) throw new Error('config.json의 llm.summary.model을 먼저 정해주세요');
+    let last = '';
+    for (const model of models) {
+      const r = await fetch(cfg.base_url.replace(/\/$/, '') + '/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, temperature: 0, response_format: { type: 'json_object' },
+          messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }),
+      });
+      if (r.status === 401 || r.status === 403) { llmKeys.set(cfg.key_name, ''); throw new Error('키가 맞지 않아요. 다시 누르면 새로 입력할 수 있어요'); }
+      if ([429, 500, 502, 503, 504].includes(r.status)) { last = `${model}: ${r.status}`; continue; }
+      if (!r.ok) throw new Error(`${model}: ${r.status}`);
+      const data = await r.json();
+      return { text: data.choices?.[0]?.message?.content || '', model: `${new URL(cfg.base_url).host}/${model}` };
+    }
+    throw new Error(`모델이 바빠요 (${last}). 잠시 뒤에 다시 눌러주세요`);
+  }
+
+  async function resummarize(id, btn) {
+    const p0 = state.papers.get(id);
+    const cfg = state.config?.llm?.summary;
+    if (!p0?.abstract) { toast('초록이 없어서 요약할 수 없어요.', true); return; }
+    if (!cfg) { toast('config.json에 llm.summary가 없어요.', true); return; }
+    btn.disabled = true; btn.textContent = '요약 중...';
+    try {
+      const lang = state.config?.summary?.language || 'Korean, keeping technical terms in English';
+      const reply = await callLLM(cfg, SUMMARY_PROMPT(lang), `Title: ${cleanText(p0.title)}\n\nAbstract: ${cleanText(p0.abstract).slice(0, 4000)}`);
+      const s = parseJsonReply(reply.text);
+      const summary = { claim: cleanText(s.claim), condition: cleanText(s.condition), gap: cleanText(s.gap) };
+      const p = structuredClone(p0);
+      p.summary = summary;
+      p.provenance = { ...(p.provenance || {}), summary_model: reply.model, summary_from: 'abstract',
+        summarized_at: today(), summary_check: Object.values(summary).every(Boolean) ? 'ok' : 'incomplete' };
+      await save([{ dir: 'papers', data: p }], `Re-summarize ${id}`);
+      showPaper(id);
+    } catch (err) {
+      toast(`재요약하지 못했어요: ${err.message}`, true);
+      if (document.contains(btn)) { btn.disabled = false; btn.textContent = '재요약'; }
+    }
+  }
+
   // ---------- actions ----------
   async function setPaperStatus(id, status) {
     const p = structuredClone(state.papers.get(id));
@@ -614,6 +701,7 @@
     const { action, id } = b.dataset;
     if (action === 'paper-confirm') setPaperStatus(id, 'confirmed');
     else if (action === 'paper-hold') setPaperStatus(id, 'hold');
+    else if (action === 'paper-resummarize') resummarize(id, b);
     else if (action === 'summary-edit') showPaper(id, true);
     else if (action === 'paper-view') showPaper(id);
     else if (action === 'rel-approve') setRelationStatus(id, 'approved');
@@ -714,7 +802,7 @@
     dialog.close();
     useSource('github');
   };
-  $('#btn-logout').onclick = () => { store.clear(); gh.conn = null; useSource('demo'); };
+  $('#btn-logout').onclick = () => { store.clear(); llmKeys.clearAll(); gh.conn = null; useSource('demo'); };
 
   let resizeTimer;
   window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => cy && renderGraph(), 200); });

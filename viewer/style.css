@@ -161,6 +161,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .rel.duplicate { border-color: var(--duplicate); }
 .rel a, .detail a { color: var(--accent); }
 .actions { display: flex; gap: 6px; margin-top: 10px; }
+.actions .push-right { margin-left: auto; }
 
 dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); padding: 20px; width: min(420px, 92vw); }
 dialog::backdrop { background: rgb(0 0 0 / .3); }

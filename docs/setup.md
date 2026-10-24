@@ -40,6 +40,8 @@ Only the names in `config.json` → `llm.*.key_name` are needed for the LLM part
 
 The token is stored only in your browser and sent only to `api.github.com`. Press **로그아웃** on shared computers.
 
+The **재요약** button in a paper's panel calls the summary model (`config.json` → `llm.summary`) straight from your browser. The first time, it asks for that model's API key; the key is kept in this browser only, sent only to that model's address, and removed by **로그아웃**.
+
 ## 4. Collection settings
 
 `config.json` → `collect`:
