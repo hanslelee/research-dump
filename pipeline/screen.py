@@ -45,7 +45,8 @@ def batches(items, n):
         yield items[i:i + n]
 
 
-def run(data_dir: Path, today: str, log=print, chat=None):
+def run(data_dir: Path, today: str, log=print, chat=None, only_retag=False):
+    """only_retag: tag papers marked needs_tags and skip the candidates (used for papers added by hand)."""
     chat = chat or llm.chat
     config = json.loads((data_dir / "config.json").read_text())
     agent = (config.get("llm") or {}).get("screening")
@@ -63,7 +64,7 @@ def run(data_dir: Path, today: str, log=print, chat=None):
     papers = load_dir(data_dir / "papers")
 
     pending = []
-    for f in sorted((data_dir / "candidates").glob("*.json")) if (data_dir / "candidates").exists() else []:
+    for f in [] if only_retag else sorted((data_dir / "candidates").glob("*.json")) if (data_dir / "candidates").exists() else []:
         for it in json.loads(f.read_text())["items"]:
             if it["id"] not in done and it["id"] not in papers:
                 pending.append(it)

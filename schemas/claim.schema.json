@@ -75,6 +75,14 @@
           },
           "result": {
             "type": "string"
+          },
+          "status": {
+            "enum": [
+              "plan",
+              "running",
+              "done"
+            ],
+            "description": "계획 / 진행 중 / 완료"
           }
         }
       }
@@ -91,15 +99,7 @@
     },
     "basis": {
       "type": "string",
-      "description": "근거: which findings meet to raise this question"
-    },
-    "gap": {
-      "type": "string",
-      "description": "빈 곳: what nobody has done yet"
-    },
-    "first_experiment": {
-      "type": "string",
-      "description": "첫 실험: the smallest experiment that would test it"
+      "description": "근거: why it should work and what nobody has done yet"
     },
     "papers": {
       "type": "array",

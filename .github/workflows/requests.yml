@@ -1,4 +1,4 @@
-# Reusable workflow for requests made on the web page (관계 찾기, 연구 주제 추천).
+# Reusable workflow for requests made on the web page (관계 찾기, 연구 주제 추천, 관련 논문 찾기, 논문 추가).
 # The caller's data repository runs it when a file under requests/ is pushed.
 name: requests
 
@@ -10,6 +10,8 @@ on:
         type: string
         default: main
     secrets:
+      S2_API_KEY:
+        required: false
       GEMINI_API_KEY:
         required: false
       OPENROUTER_API_KEY:
@@ -49,6 +51,7 @@ jobs:
 
       - name: Process requests
         env:
+          S2_API_KEY: ${{ secrets.S2_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

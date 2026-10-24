@@ -1,4 +1,4 @@
-# Runs when the web page saves a request (관계 찾기, 연구 주제 추천) under requests/.
+# Runs when the web page saves a request (관계 찾기, 연구 주제 추천, 관련 논문 찾기, 논문 추가) under requests/.
 # Copy this file into your data repository next to weekly.yml.
 name: requests
 

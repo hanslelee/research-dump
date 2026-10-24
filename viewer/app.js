@@ -20,6 +20,8 @@
   const L01_TYPES = [...CLAIM_TYPES, 'unrelated'];
   const CLAIM_STATUS = ['candidate', 'active', 'hold', 'retired'];
   const CLAIM_STATUS_KO = { candidate: '후보', active: '진행 중', hold: '보류', retired: '접음' };
+  const EXP_STATUS = ['plan', 'running', 'done'];
+  const EXP_STATUS_KO = { plan: '계획', running: '진행 중', done: '완료' };
   const STORAGE_KEY = 'research-dump.connection';
   const NEW_DAYS = 7, RECENT_DAYS = 28;
   const DIRS = ['papers', 'authors', 'claims', 'relations', 'requests'];
@@ -63,6 +65,16 @@
   const isStarred = p => String(p.meta?.popularity || '').startsWith('★');
   const venueOf = p => p.meta?.venue || p.venue || '';
   const tagList = p => { const t = p.tags || {}; return [...(t.method || []), ...(t.goal || []), t.modal, t.setting, ...(t.topic || [])].filter(Boolean); };
+
+  // same as pipeline/migrate.py normalize_claim: 빈 곳 -> 근거, 첫 실험 -> planned experiment
+  function normalizeClaim(c) {
+    const x = { memo: '', ...c };
+    if (x.gap) { x.basis = `${(x.basis || '').trim()}\n빈 곳: ${x.gap}`.trim(); }
+    if (x.first_experiment) x.experiments = [{ title: '첫 실험', status: 'plan', setup: x.first_experiment, result: '' }, ...(x.experiments || [])];
+    delete x.gap; delete x.first_experiment;
+    x.experiments = (x.experiments || []).map(e => ({ status: (e.result || '').trim() ? 'done' : 'plan', ...e }));
+    return x;
+  }
 
   // ---------- storage (best effort) ----------
   const store = {
@@ -210,8 +222,8 @@
     state.config = data.config || { scope: '', topics: [] };
     state.papers = new Map(data.papers.map(p => [p.id, p]));
     state.authors = new Map(data.authors.map(a => [a.id, a]));
-    state.claims = new Map(data.claims.map(c => [c.id, c]));
-    state.requests = new Map((data.requests || []).map(r => [r.id, r]));
+    state.claims = new Map(data.claims.map(c => [c.id, normalizeClaim(c)]));
+    state.requests = new Map((data.requests || []).filter(r => r.status !== 'dropped').map(r => [r.id, r]));
     state.relations = data.relations;
     state.excluded = data.excluded || [];
     state.keywords = data.keywords || {};
@@ -556,14 +568,26 @@
       <button type="button" data-action="request" data-kind="topics" data-id="${esc(p.id)}" ${busy('topics') ? 'disabled' : ''}>${busy('topics') ? '추천 받는 중...' : '연구 주제 추천'}</button>`;
   }
 
-  function requestNotes(p) {
-    return [...state.requests.values()].filter(r => r.paper === p.id).map(r => {
-      const what = r.kind === 'topics' ? '연구 주제 추천' : '관계 찾기';
+  const REQUEST_LABEL = { topics: '연구 주제 추천', relations: '관계 찾기', claim_papers: '관련 논문 찾기', add_paper: '논문 추가' };
+  const REQUEST_DONE = { topics: '연구 주제 추천 결과가 들어왔어요.', relations: '관계 찾기 결과가 들어왔어요.',
+    claim_papers: '관련 논문 찾기 결과가 들어왔어요.', add_paper: '논문을 추가하고 요약과 관계 초안까지 만들었어요.' };
+
+  function requestNoteList(filter) {
+    return [...state.requests.values()].filter(filter).map(r => {
+      const what = REQUEST_LABEL[r.kind] || r.kind;
+      const target = r.kind === 'add_paper' ? ` "${esc(r.query)}"` : '';
       return r.status === 'failed'
-        ? `<p class="rel duplicate">${what} 실패: ${esc(r.error || '')} <button type="button" class="mini" data-action="request-retry" data-id="${esc(r.id)}">다시 요청</button></p>`
-        : `<p class="hint">${what} 요청 중 (${esc(r.created_at)}). 보통 1~3분 걸려요.</p>`;
+        ? `<p class="rel duplicate">${what}${target} 실패: ${esc(r.error || '')} <button type="button" class="mini" data-action="request-retry" data-id="${esc(r.id)}">다시 요청</button> <button type="button" class="mini quiet" data-action="request-drop" data-id="${esc(r.id)}">지우기</button></p>`
+        : `<p class="hint">${what}${target} 진행 중 (${esc(r.created_at)}). 보통 1~3분 걸려요.</p>`;
     }).join('');
   }
+  const requestNotes = p => requestNoteList(r => r.paper === p.id && r.kind !== 'add_paper');
+
+  const addPaperForm = (claimId = '') => `
+    <form class="edit add-paper" data-form="add-paper" data-claim="${esc(claimId)}">
+      <input name="query" required placeholder="arXiv 번호, arXiv 링크 또는 논문 제목">
+      <button type="submit">추가하기</button>
+    </form>`;
 
   const memoForm = (kind, id, memo, rows = 4) => `
     <form class="edit memo" data-form="memo" data-kind="${kind}" data-id="${esc(id)}">
@@ -681,9 +705,7 @@
       <form class="edit" data-form="claim" data-id="${esc(c?.id || '')}">
         <label>연구 주제 (한 줄)<textarea name="text" rows="2" required>${esc(c?.text)}</textarea></label>
         <label>상태<select name="status">${options(CLAIM_STATUS, c?.status || 'candidate', CLAIM_STATUS_KO)}</select></label>
-        <label>근거<textarea name="basis" rows="2">${esc(c?.basis)}</textarea></label>
-        <label>빈 곳<textarea name="gap" rows="2">${esc(c?.gap)}</textarea></label>
-        <label>첫 실험<textarea name="first_experiment" rows="2">${esc(c?.first_experiment)}</textarea></label>
+        <label>근거 (왜 될 것 같은지, 아직 아무도 안 한 것)<textarea name="basis" rows="4">${esc(c?.basis)}</textarea></label>
         ${c ? '' : `<label>메모<textarea name="memo" rows="3"></textarea></label>`}
         ${c ? '<label>바꾼 이유 (문장을 바꿀 때만)<input name="reason"></label>' : ''}
         <div class="actions"><button type="submit">${c ? '저장' : '만들기'}</button><button type="button" class="quiet" data-action="claim-cancel" data-id="${esc(c?.id || '')}">취소</button></div>
@@ -696,32 +718,47 @@
     if (mode === 'edit') { box.innerHTML = `<h3>연구 주제 수정</h3><p class="meta">문장을 바꾸면 v${c.version + 1}이 되고, 지금 문장은 버전 기록에 남아요.</p>${claimForm(c)}`; return; }
     const links = state.relations.filter(r => r.layer === '0-1' && r.to === id && r.status !== 'rejected');
     const dup = links.filter(r => r.type === 'duplicate');
+    const busyClaim = [...state.requests.values()].some(r => r.claim === id && r.kind === 'claim_papers' && r.status !== 'failed');
     box.innerHTML = `
       <h3>${esc(c.text)}</h3>
       <div class="meta">${c.origin === 'ai' ? `<span class="chip ai">AI 추천</span> ` : ''}${esc(CLAIM_STATUS_KO[c.status] || c.status)} · v${esc(c.version)}${c.created_at ? ` · ${esc(c.created_at)}` : ''}
         <button type="button" class="mini" data-action="claim-edit" data-id="${esc(id)}">수정</button></div>
       ${c.origin === 'ai' && c.status === 'candidate' ? `<div class="actions"><button type="button" data-action="claim-status" data-status="active" data-id="${esc(id)}">진행할래요</button><button type="button" class="quiet" data-action="claim-status" data-status="retired" data-id="${esc(id)}">접기</button></div>` : ''}
       ${dup.length ? `<p class="rel duplicate"><b>duplicate ${dup.length}건</b>: 이미 이 주제를 다룬 논문이 있을 수 있어요.</p>` : ''}
-      ${c.basis || c.gap || c.first_experiment ? `${field('근거', c.basis)}${field('빈 곳', c.gap)}${field('첫 실험', c.first_experiment)}` : ''}
-      ${c.model ? `<p class="meta">추천 모델: ${esc(c.model)}</p>` : ''}
       <h4>메모</h4>
       ${memoForm('claim', id, c.memo)}
-      <h4>연결된 논문</h4>
-      ${links.map(r => relCard(r, r.from)).join('') || '<p class="hint">아직 없어요. 논문을 눌러 "관계 직접 추가"로 연결할 수 있어요.</p>'}
-      <h4>내 실험</h4>
-      ${(c.experiments || []).map(x => `<div class="rel"><b>${esc(x.title)}</b> <span class="meta">${esc(x.date || '')}</span>${field('설정', x.setup)}${field('결과', x.result)}</div>`).join('') || '<p class="hint">기록된 실험 없음</p>'}
+      <h4>근거</h4>
+      ${c.basis ? `<p class="basis">${esc(c.basis)}</p>` : '<p class="hint">아직 없음. "수정"에서 적을 수 있어요.</p>'}
+      ${c.model ? `<p class="meta">추천 모델: ${esc(c.model)}</p>` : ''}
+      <h4>관련 논문 <span class="count">${links.length}편</span></h4>
+      <div class="actions wrap">
+        <button type="button" data-action="claim-papers" data-id="${esc(id)}" ${busyClaim ? 'disabled' : ''}>${busyClaim ? '찾는 중...' : '관련 논문 찾기'}</button>
+      </div>
+      ${requestNoteList(r => r.claim === id)}
+      ${links.map(r => relCard(r, r.from)).join('') || '<p class="hint">아직 없어요. "관련 논문 찾기"를 누르거나, 아래에서 논문을 추가해보세요.</p>'}
+      <details class="add-rel"><summary>저장소에 없는 논문 추가</summary>
+        <p class="hint">추가하면 저장 → 요약 → 이 연구 주제와 다른 논문들에 대한 관계 초안까지 만들어요.</p>
+        ${addPaperForm(id)}
+      </details>
+      <h4>실험</h4>
+      ${(c.experiments || []).map((x, i) => `<div class="rel exp">
+        <div><b>${esc(x.title)}</b> <span class="meta">${esc(x.date || '')}</span>
+          <select class="exp-status" data-claim="${esc(id)}" data-i="${i}">${options(EXP_STATUS, x.status || 'plan', EXP_STATUS_KO)}</select></div>
+        ${x.setup ? field('설정', x.setup) : ''}${x.result ? field('결과', x.result) : ''}</div>`).join('') || '<p class="hint">기록된 실험 없음</p>'}
       <details class="add-rel">
         <summary>실험 추가</summary>
         <form class="edit" data-form="experiment" data-id="${esc(id)}">
           <label>제목<input name="title" required></label>
+          <label>상태<select name="status">${options(EXP_STATUS, 'plan', EXP_STATUS_KO)}</select></label>
           <label>날짜<input name="date" type="date" value="${today()}"></label>
           <label>설정<textarea name="setup" rows="3"></textarea></label>
           <label>결과<textarea name="result" rows="3"></textarea></label>
           <div class="actions"><button type="submit">추가</button></div>
         </form>
       </details>
-      <h4>버전 기록</h4>
-      ${(c.history || []).slice().reverse().map(h => `<div class="rel"><b>v${esc(h.version)}</b> ${esc(h.text)}<p class="meta">${esc(h.changed_at || '')} ${esc(h.reason || '')}</p></div>`).join('') || '<p class="hint">이전 버전 없음</p>'}
+      <details class="add-rel"><summary>버전 기록 (${(c.history || []).length})</summary>
+        ${(c.history || []).slice().reverse().map(h => `<div class="rel"><b>v${esc(h.version)}</b> ${esc(h.text)}<p class="meta">${esc(h.changed_at || '')} ${esc(h.reason || '')}</p></div>`).join('') || '<p class="hint">이전 버전 없음</p>'}
+      </details>
     `;
   }
 
@@ -747,7 +784,7 @@
       <div class="row-card ${t.selected === c.id ? 'active' : ''}" data-claim-row="${esc(c.id)}">
         <div class="row-title">${c.origin === 'ai' ? '<span class="chip ai">AI 추천</span> ' : ''}${esc(c.text)}</div>
         <div class="meta">${esc(CLAIM_STATUS_KO[c.status] || c.status)} · v${esc(c.version)} · 연결 논문 ${claimLinks(c.id).length}편 · 실험 ${(c.experiments || []).length}개${c.created_at ? ` · ${esc(c.created_at)}` : ''}</div>
-        ${c.gap ? `<div class="row-text">빈 곳: ${esc(c.gap)}</div>` : ''}
+        ${c.basis ? `<div class="row-text clamp2">${esc(c.basis)}</div>` : ''}
         ${c.memo ? `<div class="memo-preview">${esc(c.memo)}</div>` : ''}
       </div>`).join('') || '<p class="hint">연구 주제가 없어요. "+ 새 연구 주제"로 만들거나, 논문에서 "연구 주제 추천"을 눌러보세요.</p>';
     if (t.selected && state.claims.has(t.selected)) showClaim(t.selected);
@@ -905,7 +942,10 @@
       return;
     }
     const rows = listPapers();
-    $('#list-head').innerHTML = `<div class="row"><b>${rows.length}편</b><input type="search" data-ls="q" placeholder="제목, 저자, 주장, 메모 검색" value="${esc(L.q)}"></div>`;
+    $('#list-head').innerHTML = `<div class="row"><b>${rows.length}편</b><input type="search" data-ls="q" placeholder="제목, 저자, 주장, 메모 검색" value="${esc(L.q)}"></div>
+      <details class="add-rel list-add"><summary>논문 추가</summary>
+        <p class="hint">추가하면 저장 → 요약 → 연구 주제들에 대한 관계 초안까지 만들어요.</p>${addPaperForm()}</details>
+      ${requestNoteList(r => r.kind === 'add_paper' && !r.claim)}`;
     $('#paper-list').innerHTML = rows.slice(0, listLimit).map(paperRow).join('')
       + (rows.length > listLimit ? `<button type="button" class="mini-wide" data-action="more">더 보기 (${rows.length - listLimit}편 남음)</button>` : '')
       || '<p class="hint">조건에 맞는 논문이 없어요.</p>';
@@ -1027,14 +1067,26 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
   }
 
   // ---------- requests processed by GitHub Actions (관계 찾기, 연구 주제 추천) ----------
-  async function makeRequest(kind, paperId) {
-    if (state.source !== 'github') { toast('이 기능은 내 저장소를 연결해야 쓸 수 있어요.', true); return; }
-    const r = { id: newId('req'), kind, paper: paperId, status: 'pending', created_at: today() };
-    const ok = await save([{ dir: 'requests', data: r }], `Request ${kind} for ${paperId}`, { quiet: true });
-    if (!ok) { state.requests.delete(r.id); return; }
-    toast(kind === 'topics' ? '연구 주제 추천을 요청했어요. 1~3분 뒤 연구 주제 탭에 후보가 생겨요.' : '관계 찾기를 요청했어요. 1~3분 뒤 이 논문의 관계에 후보가 생겨요.');
-    afterPaperChange(paperId);
+  async function makeRequest(kind, paperId, extra = {}) {
+    if (state.source !== 'github') { toast('이 기능은 내 저장소를 연결해야 쓸 수 있어요.', true); return false; }
+    const r = { id: newId('req'), kind, ...(paperId ? { paper: paperId } : {}), ...extra, status: 'pending', created_at: today() };
+    const ok = await save([{ dir: 'requests', data: r }], `Request ${kind} ${paperId || extra.claim || extra.query || ''}`, { quiet: true });
+    if (!ok) { state.requests.delete(r.id); return false; }
+    toast({
+      topics: '연구 주제 추천을 요청했어요. 1~3분 뒤 연구 주제 탭에 후보가 생겨요.',
+      relations: '관계 찾기를 요청했어요. 1~3분 뒤 이 논문의 관계에 후보가 생겨요.',
+      claim_papers: '관련 논문 찾기를 요청했어요. 1~3분 뒤 관련 논문에 후보가 생겨요.',
+      add_paper: '논문 추가를 요청했어요. 저장, 요약, 관계 초안까지 1~3분 걸려요.',
+    }[kind]);
+    afterRequestChange(r);
     watchRequest(r);
+    return true;
+  }
+
+  function afterRequestChange(r) {
+    if (r.paper && r.kind !== 'add_paper' && state.papers.has(r.paper)) afterPaperChange(r.paper);
+    else if (r.claim && state.claims.has(r.claim)) showClaim(r.claim);
+    else if (state.tab === 'papers') renderList();
   }
 
   // check every 30 s until the request file is gone (processed), then reload
@@ -1043,15 +1095,17 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
       if (state.source !== 'github') return;
       try {
         const cur = await gh.raw(fileFor('requests', r.id));
-        if (cur.status === 'failed') { state.requests.set(r.id, cur); toast(`요청이 실패했어요: ${cur.error || ''}`, true); afterPaperChange(r.paper); return; }
+        if (cur.status === 'failed') { state.requests.set(r.id, cur); toast(`요청이 실패했어요: ${cur.error || ''}`, true); afterRequestChange(cur); return; }
         if (tries > 1) watchRequest(r, tries - 1);
       } catch (e) {
         if (e.status === 404) {
-          toast(r.kind === 'topics' ? '연구 주제 추천 결과가 들어왔어요.' : '관계 찾기 결과가 들어왔어요.');
+          toast(REQUEST_DONE[r.kind] || '결과가 들어왔어요.');
           const keep = { tab: state.tab, claim: state.selectedClaim };
           await useSource('github');
-          if (keep.tab === 'topics') setTab('topics'); else if (keep.tab === 'home') showPaper(r.paper);
-          else renderList();
+          if (keep.tab === 'home') {
+            if (keep.claim && state.claims.has(keep.claim)) { state.selectedClaim = keep.claim; renderSidebar(); renderGraph(); showClaim(keep.claim); }
+            else if (r.paper && state.papers.has(r.paper)) showPaper(r.paper);
+          }
         } else if (tries > 1) watchRequest(r, tries - 1);
       }
     }, 30000);
@@ -1113,9 +1167,11 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     if (action === 'mark') toggleMark(id, b.dataset.mark);
     else if (action === 'paper-resummarize') resummarize(id, b);
     else if (action === 'request') makeRequest(b.dataset.kind, id);
+    else if (action === 'claim-papers') makeRequest('claim_papers', null, { claim: id });
+    else if (action === 'request-drop') { dropRequest(id); }
     else if (action === 'request-retry') {
       const r = { ...state.requests.get(id), status: 'pending', error: '', created_at: today() };
-      save([{ dir: 'requests', data: r }], `Retry request ${id}`, { quiet: true }).then(ok => { if (ok) { afterPaperChange(r.paper); watchRequest(r); } });
+      save([{ dir: 'requests', data: r }], `Retry request ${id}`, { quiet: true }).then(ok => { if (ok) { afterRequestChange(r); watchRequest(r); } });
     }
     else if (action === 'summary-edit') showPaper(id, true);
     else if (action === 'paper-view') showPaper(id);
@@ -1134,7 +1190,21 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     else if (action === 'more') { listLimit += PAGE; renderList(); }
   });
 
-  document.addEventListener('change', e => { if (e.target.closest('#detail') && e.target.name === 'to') syncRelationTypes(); });
+  document.addEventListener('change', e => {
+    if (e.target.closest('#detail') && e.target.name === 'to') syncRelationTypes();
+    if (e.target.matches('select.exp-status')) {
+      const { claim, i } = e.target.dataset;
+      const c = structuredClone(state.claims.get(claim));
+      c.experiments[+i].status = e.target.value;
+      save([{ dir: 'claims', data: c }], `Experiment status: ${claim}`, { quiet: true }).then(() => state.tab === 'topics' && renderTopics());
+    }
+  });
+
+  // a failed request is removed by writing it as dropped (the next request run deletes it)
+  async function dropRequest(id) {
+    const r = { ...state.requests.get(id), status: 'dropped' };
+    if (await save([{ dir: 'requests', data: r }], `Drop request ${id}`, { quiet: true })) { state.requests.delete(id); afterRequestChange(r); }
+  }
 
   document.addEventListener('submit', async e => {
     const f = e.target;
@@ -1143,7 +1213,10 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     const id = f.dataset.id, kind = f.dataset.form;
     const btn = f.querySelector('button[type="submit"]'); if (btn) btn.disabled = true;
     try {
-      if (kind === 'memo') {
+      if (kind === 'add-paper') {
+        const query = f.query.value.trim();
+        if (query && await makeRequest('add_paper', null, { query, ...(f.dataset.claim ? { claim: f.dataset.claim } : {}) })) f.query.value = '';
+      } else if (kind === 'memo') {
         const memo = f.memo.value.replace(/\s+$/, '');
         if (f.dataset.kind === 'paper') {
           const p = structuredClone(state.papers.get(id)); p.memo = memo;
@@ -1168,7 +1241,7 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
         refresh(); showPaper(id);
       } else if (kind === 'claim') {
         const text = f.text.value.trim(), status = f.status.value;
-        const extra = { basis: f.basis.value.trim(), gap: f.gap.value.trim(), first_experiment: f.first_experiment.value.trim() };
+        const extra = { basis: f.basis.value.trim() };
         let c;
         if (id) {
           c = structuredClone(state.claims.get(id));
@@ -1186,7 +1259,7 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
         else { state.selectedClaim = c.id; refresh(); showClaim(c.id); }
       } else if (kind === 'experiment') {
         const c = structuredClone(state.claims.get(id));
-        c.experiments = [...(c.experiments || []), { title: f.title.value.trim(), date: f.date.value, setup: f.setup.value.trim(), result: f.result.value.trim() }];
+        c.experiments = [...(c.experiments || []), { title: f.title.value.trim(), status: f.status.value, date: f.date.value, setup: f.setup.value.trim(), result: f.result.value.trim() }];
         await save([{ dir: 'claims', data: c }], `Add experiment to ${id}`);
         showClaim(id);
       }
@@ -1240,6 +1313,30 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     useSource('github');
   };
   $('#btn-logout').onclick = () => { store.clear(); llmKeys.clearAll(); gh.conn = null; useSource('demo'); };
+
+  // drag the line left of the detail panel to change its width (remembered in this browser)
+  const WIDTH_KEY = 'research-dump.widths';
+  const widths = (() => { try { return JSON.parse(localStorage.getItem(WIDTH_KEY) || '{}'); } catch { return {}; } })();
+  for (const [k, v] of Object.entries(widths)) document.documentElement.style.setProperty(k, `${v}px`);
+  for (const bar of document.querySelectorAll('.resizer')) {
+    bar.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      bar.setPointerCapture(e.pointerId);
+      bar.classList.add('dragging'); document.body.classList.add('resizing');
+      const move = ev => {
+        const w = Math.round(Math.min(Math.max(window.innerWidth - ev.clientX, 280), window.innerWidth - 420));
+        document.documentElement.style.setProperty(bar.dataset.var, `${w}px`);
+        widths[bar.dataset.var] = w;
+      };
+      const up = () => {
+        bar.removeEventListener('pointermove', move); bar.removeEventListener('pointerup', up);
+        bar.classList.remove('dragging'); document.body.classList.remove('resizing');
+        try { localStorage.setItem(WIDTH_KEY, JSON.stringify(widths)); } catch { /* ignore */ }
+        if (cy && state.tab === 'home') { cy.resize(); cy.fit(undefined, 40); }
+      };
+      bar.addEventListener('pointermove', move); bar.addEventListener('pointerup', up);
+    });
+  }
 
   let resizeTimer;
   window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => cy && state.tab === 'home' && renderGraph(), 200); });

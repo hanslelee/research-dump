@@ -9,7 +9,7 @@ Papers used (at most 5, the chosen paper first):
 For arXiv papers the PDF is downloaded and its text (no figures) is sent to the model;
 other papers use the abstract and summary. Your memos are not sent.
 
-Each proposal becomes a claim with status "candidate" and origin "ai" (연구 주제 탭, "AI 추천"),
+Each proposal (topic, basis, a planned first experiment) becomes a claim with status "candidate" and origin "ai" (연구 주제 탭, "AI 추천"),
 linked to the papers it used by "motivates" relations with status "new".
 """
 import argparse
@@ -39,12 +39,12 @@ Research scope of this researcher: {scope}
 
 For each topic give:
 - text: the research question or hypothesis in one sentence
-- basis: which finding of which paper meets which finding of another to raise this question (name the papers)
-- gap: what none of these papers has done yet
+- basis: which finding of which paper meets which finding of another to raise this question (name the papers),
+  and what none of these papers has done yet
 - first_experiment: the smallest experiment that would test it (model size, data, comparison, metric)
 - papers: ids of the papers the topic uses
 Write in {language}. Plain text, no markdown.
-Reply with JSON only: {{"topics": [{{"text": "...", "basis": "...", "gap": "...", "first_experiment": "...", "papers": ["..."]}}]}}"""
+Reply with JSON only: {{"topics": [{{"text": "...", "basis": "...", "first_experiment": "...", "papers": ["..."]}}]}}"""
 
 
 def arxiv_id(p):
@@ -135,9 +135,10 @@ def recommend(data_dir: Path, paper_id: str, today: str, log=print, chat=None, f
         used = [i for i in (t.get("papers") or []) if i in ids] or [paper_id]
         cid = "claim:ai-" + hashlib.sha1(f"{paper_id}|{today}|{t['text']}".encode()).hexdigest()[:10]
         c = {"id": cid, "text": clean_text(t["text"]), "status": "candidate", "version": 1, "origin": "ai",
-             "basis": clean_text(str(t.get("basis", ""))), "gap": clean_text(str(t.get("gap", ""))),
-             "first_experiment": clean_text(str(t.get("first_experiment", ""))), "papers": used,
-             "from_paper": paper_id, "memo": "", "history": [], "experiments": [],
+             "basis": clean_text(str(t.get("basis", ""))), "papers": used,
+             "from_paper": paper_id, "memo": "", "history": [],
+             "experiments": [{"title": "첫 실험", "status": "plan", "setup": clean_text(str(t.get("first_experiment", ""))), "result": ""}]
+             if (t.get("first_experiment") or "").strip() else [],
              "created_at": today, "model": reply["model"], "used_full_text": full}
         write_json(data_dir / file_for("claims", cid), c)
         for pid in used:

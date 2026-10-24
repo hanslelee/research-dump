@@ -9,7 +9,9 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pipeline"))
+import addpaper  # noqa: E402
 import bundle  # noqa: E402
+import claimrel as claimrel_mod  # noqa: E402
 import collect  # noqa: E402
 import compare  # noqa: E402
 import dedupe  # noqa: E402
@@ -158,7 +160,7 @@ class CompareTest(Base):
 def fake_topics(agent, system, user, **kw):
     assert "FOCUS PAPER arxiv:t" in user
     return {"text": json.dumps({"topics": [
-        {"text": "Gate steering by probe confidence", "basis": "A meets B", "gap": "none did", "first_experiment": "7B, TriviaQA",
+        {"text": "Gate steering by probe confidence", "basis": "A meets B", "first_experiment": "7B, TriviaQA",
          "papers": ["arxiv:t", "arxiv:l", "unknown"]},
         {"text": "Second", "papers": []}]}), "model": "x.test/m"}
 
@@ -175,6 +177,8 @@ class TopicsTest(Base):
         self.assertEqual(len(claims), 2)
         c = claims[0]
         self.assertEqual((c["status"], c["origin"], c["papers"]), ("candidate", "ai", ["arxiv:t", "arxiv:l"]))
+        self.assertEqual(c["experiments"], [{"title": "첫 실험", "status": "plan", "setup": "7B, TriviaQA", "result": ""}])
+        self.assertEqual(claims[1]["experiments"], [])
         rels = [r for r in self.load("relations").values() if r["to"] == c["id"]]
         self.assertEqual({r["from"] for r in rels}, {"arxiv:t", "arxiv:l"})
         self.assertTrue(all(r["layer"] == "0-1" and r["type"] == "motivates" and r["status"] == "new" for r in rels))
@@ -254,3 +258,109 @@ class SeedTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def fake_claimrel(agent, system, user, **kw):
+    data = json.loads(user)
+    if "research_topic" not in data:  # paper vs paper (관계 찾기)
+        return fake_compare(agent, system, user, **kw)
+    rows = []
+    for p in data["papers"]:
+        if "CAA" in p["title"]:
+            rows.append({"id": p["id"], "type": "motivates", "evidence": "CAA gives the sycophancy vector"})
+        elif "Already" in p["title"]:
+            rows.append({"id": p["id"], "type": "duplicate", "evidence": "same idea"})
+        elif "Vague" in p["title"]:
+            rows.append({"id": p["id"], "type": "support"})  # no evidence -> dropped
+        else:
+            rows.append({"id": p["id"], "type": "none"})
+    return {"text": json.dumps({"relations": rows}), "model": "x.test/m"}
+
+
+def fake_all(agent, system, user, **kw):
+    if "screen new research papers" in system:
+        rows = [{"id": c["id"], "in_scope": True, "reason": "r", "tags": {"method": ["inference"], "topic": ["steering"]}} for c in json.loads(user)]
+        return {"text": json.dumps({"results": rows}), "model": "m"}
+    if "summarize one research paper" in system:
+        return {"text": '{"claim": "주장", "condition": "조건", "gap": "빈 곳"}', "model": "m"}
+    return fake_claimrel(agent, system, user, **kw)
+
+
+CAA = {"id": "arxiv:2312.06681", "title": "Steering Llama 2 via CAA", "abstract": "We steer.", "authors": ["N. Rimsky"],
+       "year": 2023, "venue": "arXiv", "url": "https://arxiv.org/abs/2312.06681", "published": "2023-12-09",
+       "ids": {"arxiv": "2312.06681"}, "sources": ["manual"]}
+
+
+class ClaimTest(Base):
+    def setUp(self):
+        super().setUp()
+        self.put("claims", {"id": "claim:g", "text": "Confidence-gated steering", "status": "candidate", "version": 1, "basis": "b"})
+
+    def test_claim_papers_strict_with_evidence(self):
+        self.put("papers", paper("arxiv:1", "CAA vectors"))
+        self.put("papers", paper("arxiv:2", "Already gated"))
+        self.put("papers", paper("arxiv:3", "Vague one"))
+        self.put("papers", paper("arxiv:4", "Cooking"))
+        rels = claimrel_mod.link(self.d, "claim:g", "2026-10-24", log=lambda *_: None, chat=fake_claimrel)
+        self.assertEqual({(r["from"], r["type"]) for r in rels}, {("arxiv:1", "motivates"), ("arxiv:2", "duplicate")})
+        self.assertTrue(all(r["layer"] == "0-1" and r["to"] == "claim:g" and r["status"] == "new" for r in rels))
+        # already linked papers are not asked again
+        calls = []
+        claimrel_mod.link(self.d, "claim:g", "2026-10-24", log=lambda *_: None,
+                          chat=lambda a, s, u, **kw: (calls.append(json.loads(u)), fake_claimrel(a, s, u))[1])
+        self.assertEqual(sorted(p["id"] for c in calls for p in c["papers"]), ["arxiv:3", "arxiv:4"])
+
+    def test_add_paper_from_claim_screen(self):
+        self.put("papers", paper("arxiv:5", "Contra study", ["steering"]))
+        (self.d / "requests").mkdir()
+        self.put("requests", {"id": "req:a", "kind": "add_paper", "query": "2312.06681", "claim": "claim:g", "status": "pending"})
+        requests_run.run(self.d, "2026-10-24", log=lambda *_: None, chat=fake_all, find=lambda q, log: dict(CAA))
+        p = self.load("papers")["arxiv:2312.06681"]
+        self.assertEqual(p["summary"]["claim"], "주장")
+        self.assertEqual(p["tags"]["topic"], ["steering"])
+        self.assertNotIn("needs_tags", p["provenance"])
+        rels = self.load("relations").values()
+        self.assertIn(("arxiv:2312.06681", "claim:g", "motivates"), {(r["from"], r["to"], r["type"]) for r in rels})
+        self.assertIn(("arxiv:2312.06681", "arxiv:5", "conflicts"), {(r["from"], r["to"], r["type"]) for r in rels})
+        self.assertEqual(self.load("requests"), {})
+
+    def test_add_paper_from_list_links_all_open_claims_only(self):
+        self.put("claims", {"id": "claim:old", "text": "old", "status": "retired", "version": 1})
+        self.put("papers", paper("arxiv:5", "Other", ["steering"]))
+        asked = []
+
+        def chat(a, s, u, **kw):
+            if "research_topic" in u:
+                asked.append(json.loads(u)["research_topic"]["topic"])
+            if "TARGET" in s:
+                raise AssertionError("no paper-vs-paper comparison from the list tab")
+            return fake_all(a, s, u, **kw)
+        (self.d / "requests").mkdir()
+        self.put("requests", {"id": "req:b", "kind": "add_paper", "query": "Steering Llama 2 via CAA", "status": "pending"})
+        requests_run.run(self.d, "2026-10-24", log=lambda *_: None, chat=chat, find=lambda q, log: dict(CAA))
+        self.assertEqual(asked, ["Confidence-gated steering"])
+
+    def test_existing_paper_not_duplicated(self):
+        self.put("papers", paper("arxiv:2312.06681", "Steering Llama 2 via CAA"))
+        pid, added = addpaper.add(self.d, "2312.06681", "2026-10-24", log=lambda *_: None, chat=fake_all, find=lambda q, log: dict(CAA))
+        self.assertEqual((pid, added), ("arxiv:2312.06681", False))
+
+    def test_arxiv_id_parsing(self):
+        self.assertEqual(addpaper.arxiv_id_in("https://arxiv.org/abs/2312.06681v2"), "2312.06681")
+        self.assertEqual(addpaper.arxiv_id_in("2312.06681"), "2312.06681")
+        self.assertEqual(addpaper.arxiv_id_in("Steering Llama 2 via Contrastive Activation Addition"), "")
+
+    def test_migrate_moves_gap_and_first_experiment(self):
+        self.put("claims", {"id": "claim:m", "text": "t", "status": "candidate", "version": 1, "basis": "why",
+                            "gap": "nobody did", "first_experiment": "7B test", "experiments": [{"title": "done", "result": "ok"}]})
+        migrate.run(self.d, "2026-10-24", log=lambda *_: None)
+        c = self.load("claims")["claim:m"]
+        self.assertEqual(c["basis"], "why\n빈 곳: nobody did")
+        self.assertNotIn("gap", c)
+        self.assertEqual([(x["title"], x["status"]) for x in c["experiments"]], [("첫 실험", "plan"), ("done", "done")])
+
+    def test_dropped_request_is_deleted(self):
+        (self.d / "requests").mkdir()
+        self.put("requests", {"id": "req:d", "kind": "relations", "paper": "x", "status": "dropped"})
+        requests_run.run(self.d, "2026-10-24", log=lambda *_: None, chat=fake_all)
+        self.assertEqual(self.load("requests"), {})

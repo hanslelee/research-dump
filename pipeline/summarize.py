@@ -31,7 +31,7 @@ Plain text only: no LaTeX, no markdown.
 Reply with JSON only: {{"claim": "...", "condition": "...", "gap": "..."}}"""
 
 
-def run(data_dir: Path, today: str, log=print, chat=None):
+def run(data_dir: Path, today: str, log=print, chat=None, only_ids=None):
     chat = chat or llm.chat
     config = json.loads((data_dir / "config.json").read_text())
     agent = (config.get("llm") or {}).get("summary")
@@ -45,7 +45,8 @@ def run(data_dir: Path, today: str, log=print, chat=None):
 
     papers = load_dir(data_dir / "papers")
     todo = [p for p in papers.values()
-            if not (p.get("summary") or {}).get("claim") and (p.get("abstract") or "").strip()]
+            if not (p.get("summary") or {}).get("claim") and (p.get("abstract") or "").strip()
+            and (only_ids is None or p["id"] in only_ids)]
     skipped = sum(1 for p in papers.values() if not (p.get("summary") or {}).get("claim") and not (p.get("abstract") or "").strip())
     if skipped:
         log(f"summary: {skipped} papers have no abstract yet")
