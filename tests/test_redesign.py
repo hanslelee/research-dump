@@ -20,6 +20,7 @@ import notify  # noqa: E402
 import requests_run  # noqa: E402
 import screen  # noqa: E402
 import topics  # noqa: E402
+import websearch  # noqa: E402
 from common import matched_keywords  # noqa: E402
 
 AGENT = {"base_url": "https://x.test/v1", "key_name": "K", "model": "m"}
@@ -364,3 +365,39 @@ class ClaimTest(Base):
         self.put("requests", {"id": "req:d", "kind": "relations", "paper": "x", "status": "dropped"})
         requests_run.run(self.d, "2026-10-24", log=lambda *_: None, chat=fake_all)
         self.assertEqual(self.load("requests"), {})
+
+
+class WebSearchTest(Base):
+    def test_search_filters_repo_and_irrelevant_and_marks_top(self):
+        self.put("claims", {"id": "claim:g", "text": "Confidence-gated steering", "status": "candidate", "version": 1, "basis": "b"})
+        self.put("papers", paper("arxiv:2312.06681", "Already here"))
+
+        def chat(agent, system, user, **kw):
+            if "search queries" in system:
+                return {"text": '{"queries": ["sycophancy steering", "confidence probe"]}', "model": "m"}
+            rows = [{"id": p["id"], "relevant": "Cooking" not in p["title"], "reason": "related"} for p in json.loads(user)["papers"]]
+            return {"text": json.dumps({"results": rows}), "model": "m"}
+
+        def search_fn(q, log):
+            mk = lambda aid, title, venue, cites: {**collect.make_item(title=title, ids={"arxiv": aid}, url="u"), "venue_short": venue, "citations": cites}
+            return [mk("2312.06681", "Already here", "arXiv", 500), mk("2401.1", "Probe paper", "ICLR", 10),
+                    mk("2401.2", "Cooking robots", "CVPR", 999), mk("2401.3", "Industry steering", "arXiv", 40)]
+
+        inst = lambda c, log: {"institutions": ["Google DeepMind", "NUS"] if "Industry" in c["title"] else ["NUS"], "industry": "Industry" in c["title"]}
+        items = websearch.search(self.d, "claim:g", "2026-10-24", log=lambda *_: None, chat=chat, search_fn=search_fn, inst_fn=inst, pause=0)
+        self.assertEqual([x["id"] for x in items], ["arxiv:2401.3", "arxiv:2401.1"])  # sorted by citations
+        by = {x["id"]: x for x in items}
+        self.assertTrue(by["arxiv:2401.1"]["top_venue"])
+        self.assertEqual(by["arxiv:2401.3"]["top_orgs"], ["Google", "DeepMind"])
+        ws = self.load("claims")["claim:g"]["web_suggestions"]
+        self.assertEqual(ws["queries"], ["sycophancy steering", "confidence probe"])
+        self.assertEqual(len(ws["items"]), 2)
+
+    def test_add_from_suggestion_uses_item(self):
+        self.put("claims", {"id": "claim:g", "text": "T", "status": "candidate", "version": 1})
+        (self.d / "requests").mkdir()
+        item = {**CAA, "venue_short": "arXiv", "citations": 300}
+        self.put("requests", {"id": "req:w", "kind": "add_paper", "query": CAA["title"], "claim": "claim:g", "item": item, "status": "pending"})
+        requests_run.run(self.d, "2026-10-24", log=lambda *_: None, chat=fake_all,
+                         find=lambda q, log: (_ for _ in ()).throw(AssertionError("should not search")))
+        self.assertIn("arxiv:2312.06681", self.load("papers"))

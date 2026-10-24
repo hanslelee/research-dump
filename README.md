@@ -42,4 +42,4 @@ Try the demo: open `viewer/` with the sample data (no token needed).
 - [x] Duplicate papers merged automatically; keyword statistics (Telegram and 논문 목록)
 - [x] Compare agent: new papers vs liked papers sharing a topic, strict, evidence sentence kept, approve/reject on the web page
 - [x] 연구 주제 추천 from a paper and its linked papers (PDF text), saved as AI candidates
-- [x] 관련 논문 찾기 for a research topic, and 추가하기 for papers not in the repository (saved, summarized and linked in one request)
+- [x] 저장소에서 관련 논문 찾기 and 관련 논문 웹 검색 (Semantic Scholar, sorted by venue / citations / top company) for a research topic, and 추가하기 for papers not in the repository (saved, summarized and linked in one request)

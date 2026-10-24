@@ -73,7 +73,8 @@ On request (`requests.yml`, starts when the web page saves a file under `request
 | Button | What happens | Model |
 | --- | --- | --- |
 | 관계 찾기 | that paper vs every other paper; proposals appear as `new` relations | `llm.compare` (falls back to `llm.summary`) |
-| 관련 논문 찾기 (연구 주제 화면) | that research topic vs every paper; support / narrow / conflict / duplicate / motivates drafts | `llm.compare` (falls back to `llm.summary`) |
+| 저장소에서 관련 논문 찾기 (연구 주제 화면) | that research topic vs every paper; support / narrow / conflict / duplicate / motivates drafts | `llm.compare` (falls back to `llm.summary`) |
+| 관련 논문 웹 검색 (연구 주제 화면) | the model writes a few search queries → Semantic Scholar (any year) → papers not in the repository, kept only if relevant, with affiliations from OpenAlex. The page shows 10, sorted by 좋은 학회, 인용수 or 탑 기업; nothing is added until you press 추가하기 | `llm.compare` (falls back to `llm.summary`), `S2_API_KEY`, `OPENALEX_API_KEY` |
 | 추가하기 (arXiv id, link or title) | fetch the paper → tag → summarize → relation drafts. From a research topic: with that topic and with other papers. From 논문 목록: with every research topic that is not retired | screening, summary and compare models; `S2_API_KEY` for title search |
 | 연구 주제 추천 | that paper + up to 4 papers linked by approved extends/conflicts (or, if none, liked papers with a shared topic). arXiv PDFs are downloaded and their text sent; 3 candidates appear in the 연구 주제 tab | `llm.recommend` (falls back to `llm.summary`) |
 

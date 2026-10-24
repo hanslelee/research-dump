@@ -5,7 +5,9 @@
 Kinds:
   relations     관계 찾기: the paper vs every other paper (compare.find_for)
   topics        연구 주제 추천: research topic candidates from the paper and its linked papers (topics.recommend)
-  claim_papers  관련 논문 찾기: a research topic vs every paper (claimrel.link)
+  claim_papers  저장소에서 관련 논문 찾기: a research topic vs every paper (claimrel.link)
+  claim_web     관련 논문 웹 검색: Semantic Scholar search for a research topic -> web_suggestions on the claim
+
   add_paper     추가하기: add a paper by arXiv id or title, tag and summarize it, then draft relations:
                 from a research topic screen (claim set): with that topic + 관계 찾기 against other papers
                 from the 논문 목록 tab (no claim): with every research topic that is not retired
@@ -27,6 +29,7 @@ import addpaper  # noqa: E402
 import bundle  # noqa: E402
 import claimrel  # noqa: E402
 import compare  # noqa: E402
+import websearch  # noqa: E402
 import topics  # noqa: E402
 from common import load_dir, read_json, write_json  # noqa: E402
 
@@ -43,7 +46,7 @@ def telegram(text, log=print):
         log(f"requests: telegram failed ({e})")
 
 
-def run(data_dir: Path, today: str, log=print, chat=None, fetch=None, find=None):
+def run(data_dir: Path, today: str, log=print, chat=None, fetch=None, find=None, search_fn=None):
     folder = data_dir / "requests"
     files = sorted(folder.glob("*.json")) if folder.exists() else []
     papers = load_dir(data_dir / "papers")
@@ -61,7 +64,9 @@ def run(data_dir: Path, today: str, log=print, chat=None, fetch=None, find=None)
         claims = load_dir(data_dir / "claims")
         try:
             if kind == "add_paper":
-                pid, added = addpaper.add(data_dir, req.get("query", ""), today, log, chat=chat, **({"find": find} if find else {}))
+                # from a web suggestion the paper data is already in the request
+                finder = (lambda q, log, it=req["item"]: dict(it)) if req.get("item") else find
+                pid, added = addpaper.add(data_dir, req.get("query", ""), today, log, chat=chat, **({"find": finder} if finder else {}))
                 title = html.escape(load_dir(data_dir / "papers")[pid]["title"])
                 if req.get("claim"):
                     rels = claimrel.link(data_dir, req["claim"], today, log, chat=chat, paper_ids={pid})
@@ -77,6 +82,11 @@ def run(data_dir: Path, today: str, log=print, chat=None, fetch=None, find=None)
                 cid = req.get("claim")
                 rels = claimrel.link(data_dir, cid, today, log, chat=chat)
                 msg = f"<b>관련 논문 찾기</b> · {html.escape((claims.get(cid) or {}).get('text', cid or ''))}\n관계 초안 {len(rels)}개 (웹페이지에서 승인/거절)"
+            elif kind == "claim_web":
+                cid = req.get("claim")
+                kw = {"search_fn": search_fn} if search_fn else {}
+                items = websearch.search(data_dir, cid, today, log, chat=chat, **kw)
+                msg = f"<b>관련 논문 웹 검색</b> · {html.escape((claims.get(cid) or {}).get('text', cid or ''))}\n추천 논문 {len(items)}편 (웹페이지 연구 주제 화면에서 추가)"
             elif kind == "relations":
                 rels = compare.find_for(data_dir, pid, today, log, chat=chat)
                 msg = f"<b>관계 찾기</b> · {title}\n새 관계 후보 {len(rels)}개 (웹페이지에서 승인/거절)"

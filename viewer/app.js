@@ -568,9 +568,9 @@
       <button type="button" data-action="request" data-kind="topics" data-id="${esc(p.id)}" ${busy('topics') ? 'disabled' : ''}>${busy('topics') ? '추천 받는 중...' : '연구 주제 추천'}</button>`;
   }
 
-  const REQUEST_LABEL = { topics: '연구 주제 추천', relations: '관계 찾기', claim_papers: '관련 논문 찾기', add_paper: '논문 추가' };
+  const REQUEST_LABEL = { topics: '연구 주제 추천', relations: '관계 찾기', claim_papers: '저장소에서 관련 논문 찾기', claim_web: '관련 논문 웹 검색', add_paper: '논문 추가' };
   const REQUEST_DONE = { topics: '연구 주제 추천 결과가 들어왔어요.', relations: '관계 찾기 결과가 들어왔어요.',
-    claim_papers: '관련 논문 찾기 결과가 들어왔어요.', add_paper: '논문을 추가하고 요약과 관계 초안까지 만들었어요.' };
+    claim_papers: '관련 논문 찾기 결과가 들어왔어요.', claim_web: '웹 추천 논문이 들어왔어요.', add_paper: '논문을 추가하고 요약과 관계 초안까지 만들었어요.' };
 
   function requestNoteList(filter) {
     return [...state.requests.values()].filter(filter).map(r => {
@@ -718,7 +718,8 @@
     if (mode === 'edit') { box.innerHTML = `<h3>연구 주제 수정</h3><p class="meta">문장을 바꾸면 v${c.version + 1}이 되고, 지금 문장은 버전 기록에 남아요.</p>${claimForm(c)}`; return; }
     const links = state.relations.filter(r => r.layer === '0-1' && r.to === id && r.status !== 'rejected');
     const dup = links.filter(r => r.type === 'duplicate');
-    const busyClaim = [...state.requests.values()].some(r => r.claim === id && r.kind === 'claim_papers' && r.status !== 'failed');
+    const busyKind = k => [...state.requests.values()].some(r => r.claim === id && r.kind === k && r.status !== 'failed');
+    const busyClaim = busyKind('claim_papers'), busyWeb = busyKind('claim_web');
     box.innerHTML = `
       <h3>${esc(c.text)}</h3>
       <div class="meta">${c.origin === 'ai' ? `<span class="chip ai">AI 추천</span> ` : ''}${esc(CLAIM_STATUS_KO[c.status] || c.status)} · v${esc(c.version)}${c.created_at ? ` · ${esc(c.created_at)}` : ''}
@@ -732,14 +733,16 @@
       ${c.model ? `<p class="meta">추천 모델: ${esc(c.model)}</p>` : ''}
       <h4>관련 논문 <span class="count">${links.length}편</span></h4>
       <div class="actions wrap">
-        <button type="button" data-action="claim-papers" data-id="${esc(id)}" ${busyClaim ? 'disabled' : ''}>${busyClaim ? '찾는 중...' : '관련 논문 찾기'}</button>
+        <button type="button" data-action="claim-papers" data-id="${esc(id)}" ${busyClaim ? 'disabled' : ''}>${busyClaim ? '찾는 중...' : '저장소에서 관련 논문 찾기'}</button>
+        <button type="button" data-action="claim-web" data-id="${esc(id)}" ${busyWeb ? 'disabled' : ''}>${busyWeb ? '검색 중...' : '관련 논문 웹 검색'}</button>
       </div>
-      ${requestNoteList(r => r.claim === id)}
+      ${requestNoteList(r => r.claim === id && r.kind !== 'claim_web')}
       ${links.map(r => relCard(r, r.from)).join('') || '<p class="hint">아직 없어요. "관련 논문 찾기"를 누르거나, 아래에서 논문을 추가해보세요.</p>'}
       <details class="add-rel"><summary>저장소에 없는 논문 추가</summary>
         <p class="hint">추가하면 저장 → 요약 → 이 연구 주제와 다른 논문들에 대한 관계 초안까지 만들어요.</p>
         ${addPaperForm(id)}
       </details>
+      ${webSuggestions(c, id)}
       <h4>실험</h4>
       ${(c.experiments || []).map((x, i) => `<div class="rel exp">
         <div><b>${esc(x.title)}</b> <span class="meta">${esc(x.date || '')}</span>
@@ -760,6 +763,41 @@
         ${(c.history || []).slice().reverse().map(h => `<div class="rel"><b>v${esc(h.version)}</b> ${esc(h.text)}<p class="meta">${esc(h.changed_at || '')} ${esc(h.reason || '')}</p></div>`).join('') || '<p class="hint">이전 버전 없음</p>'}
       </details>
     `;
+  }
+
+  // 관련 논문 웹 검색 results stored on the claim: show 10, sorted by the chosen order
+  const WEB_SORTS = { venue: '좋은 학회', citations: '인용수', company: '탑 기업' };
+  function webSuggestions(c, id) {
+    const ws = c.web_suggestions;
+    const notes = requestNoteList(r => r.claim === id && r.kind === 'claim_web');
+    if (!ws) return notes ? `<h4>웹 추천 논문</h4>${notes}` : '';
+    const sort = state.topics.webSort || 'venue';
+    const cit = x => x.citations || 0;
+    const items = [...(ws.items || [])].sort({
+      venue: (a, b) => (b.top_venue - a.top_venue) || cit(b) - cit(a),
+      citations: (a, b) => cit(b) - cit(a),
+      company: (a, b) => ((b.top_orgs || []).length > 0) - ((a.top_orgs || []).length > 0) || cit(b) - cit(a),
+    }[sort]).slice(0, 10);
+    const adding = new Set([...state.requests.values()].filter(r => r.kind === 'add_paper' && r.status !== 'failed' && r.item).map(r => r.item.id));
+    const row = x => {
+      const inRepo = state.papers.has(x.id);
+      const meta = [x.venue_short && x.venue_short !== 'arXiv' ? `${x.venue_short}${x.year ? ` ${x.year}` : ''}` : (x.year || ''),
+        (x.institutions || []).slice(0, 2).join(', ') + ((x.institutions || []).length > 2 ? ' 외' : ''), `인용 ${cit(x)}`].filter(Boolean).join(' · ');
+      return `<div class="rel web">
+        <div><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a>
+          ${x.top_venue ? '<span class="chip">좋은 학회</span>' : ''}${(x.top_orgs || []).map(o => `<span class="chip">${esc(o)}</span>`).join('')}</div>
+        <p class="meta">${esc(meta)}</p>
+        ${x.reason ? `<p class="meta">${esc(x.reason)}</p>` : ''}
+        <div class="actions">${inRepo ? '<span class="hint">저장소에 있음</span>'
+          : adding.has(x.id) ? '<span class="hint">추가 중...</span>'
+          : `<button type="button" class="mini" data-action="web-add" data-claim="${esc(id)}" data-id="${esc(x.id)}">추가하기</button>`}</div>
+      </div>`;
+    };
+    return `<h4>웹 추천 논문 <span class="count">${(ws.items || []).length > 10 ? `${ws.items.length}편 중 10편` : `${(ws.items || []).length}편`} · ${esc(ws.searched_at || '')}</span></h4>
+      ${notes}
+      <div class="chipset">${Object.entries(WEB_SORTS).map(([k, v]) => `<button type="button" class="mini ${sort === k ? 'on' : ''}" data-action="web-sort" data-sort="${k}" data-id="${esc(id)}">${v} 순</button>`).join('')}</div>
+      ${items.map(row).join('') || '<p class="hint">관련 있는 논문을 찾지 못했어요.</p>'}
+      ${ws.queries?.length ? `<p class="meta">검색어: ${esc(ws.queries.join(' / '))}</p>` : ''}`;
   }
 
   function newClaimForm() {
@@ -1076,6 +1114,7 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
       topics: '연구 주제 추천을 요청했어요. 1~3분 뒤 연구 주제 탭에 후보가 생겨요.',
       relations: '관계 찾기를 요청했어요. 1~3분 뒤 이 논문의 관계에 후보가 생겨요.',
       claim_papers: '관련 논문 찾기를 요청했어요. 1~3분 뒤 관련 논문에 후보가 생겨요.',
+      claim_web: '웹 검색을 요청했어요. 2~4분 뒤 웹 추천 논문이 보여요.',
       add_paper: '논문 추가를 요청했어요. 저장, 요약, 관계 초안까지 1~3분 걸려요.',
     }[kind]);
     afterRequestChange(r);
@@ -1168,6 +1207,12 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     else if (action === 'paper-resummarize') resummarize(id, b);
     else if (action === 'request') makeRequest(b.dataset.kind, id);
     else if (action === 'claim-papers') makeRequest('claim_papers', null, { claim: id });
+    else if (action === 'claim-web') makeRequest('claim_web', null, { claim: id });
+    else if (action === 'web-sort') { state.topics.webSort = b.dataset.sort; showClaim(id); }
+    else if (action === 'web-add') {
+      const item = state.claims.get(b.dataset.claim)?.web_suggestions?.items?.find(x => x.id === id);
+      if (item) makeRequest('add_paper', null, { query: item.title, claim: b.dataset.claim, item });
+    }
     else if (action === 'request-drop') { dropRequest(id); }
     else if (action === 'request-retry') {
       const r = { ...state.requests.get(id), status: 'pending', error: '', created_at: today() };
