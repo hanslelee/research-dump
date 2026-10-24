@@ -254,6 +254,7 @@
       $('#btn-import').hidden = state.source !== 'github';
       refresh();
       showEmptyDetail();
+      watchRequest();
     } catch (err) {
       status.textContent = `불러오지 못했어요: ${err.message}`;
     }
@@ -576,12 +577,25 @@
     return [...state.requests.values()].filter(filter).map(r => {
       const what = REQUEST_LABEL[r.kind] || r.kind;
       const target = r.kind === 'add_paper' ? ` "${esc(r.query)}"` : '';
+      const buttons = `<button type="button" class="mini" data-action="request-retry" data-id="${esc(r.id)}">재요청</button>
+        <button type="button" class="mini quiet" data-action="request-drop" data-id="${esc(r.id)}">취소하기</button>`;
+      const since = r.requested_at ? `<span class="req-elapsed" data-t="${esc(r.requested_at)}">${elapsed(r.requested_at)}</span>` : esc(r.created_at || '');
       return r.status === 'failed'
-        ? `<p class="rel duplicate">${what}${target} 실패: ${esc(r.error || '')} <button type="button" class="mini" data-action="request-retry" data-id="${esc(r.id)}">다시 요청</button> <button type="button" class="mini quiet" data-action="request-drop" data-id="${esc(r.id)}">지우기</button></p>`
-        : `<p class="hint">${what}${target} 진행 중 (${esc(r.created_at)}). 보통 1~3분 걸려요.</p>`;
+        ? `<div class="req failed">${what}${target} 실패: ${esc(r.error || '')} <div class="actions">${buttons}</div></div>`
+        : `<div class="req">${what}${target} 진행 중 · ${since} <div class="actions">${buttons}</div></div>`;
     }).join('');
   }
   const requestNotes = p => requestNoteList(r => r.paper === p.id && r.kind !== 'add_paper');
+
+  // "14초", "1분 40초", "1시간 5분" since the request was made; updated every second
+  function elapsed(iso) {
+    const sec = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000));
+    if (!Number.isFinite(sec)) return '';
+    if (sec < 60) return `${sec}초`;
+    if (sec < 3600) return `${Math.floor(sec / 60)}분 ${sec % 60}초`;
+    return `${Math.floor(sec / 3600)}시간 ${Math.floor((sec % 3600) / 60)}분`;
+  }
+  setInterval(() => { for (const el of document.querySelectorAll('.req-elapsed')) el.textContent = elapsed(el.dataset.t); }, 1000);
 
   const addPaperForm = (claimId = '') => `
     <form class="edit add-paper" data-form="add-paper" data-claim="${esc(claimId)}">
@@ -1107,7 +1121,8 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
   // ---------- requests processed by GitHub Actions (관계 찾기, 연구 주제 추천) ----------
   async function makeRequest(kind, paperId, extra = {}) {
     if (state.source !== 'github') { toast('이 기능은 내 저장소를 연결해야 쓸 수 있어요.', true); return false; }
-    const r = { id: newId('req'), kind, ...(paperId ? { paper: paperId } : {}), ...extra, status: 'pending', created_at: today() };
+    const r = { id: newId('req'), kind, ...(paperId ? { paper: paperId } : {}), ...extra, status: 'pending', created_at: today(),
+      requested_at: new Date().toISOString() };
     const ok = await save([{ dir: 'requests', data: r }], `Request ${kind} ${paperId || extra.claim || extra.query || ''}`, { quiet: true });
     if (!ok) { state.requests.delete(r.id); return false; }
     toast({
@@ -1128,26 +1143,36 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     else if (state.tab === 'papers') renderList();
   }
 
-  // check every 30 s until the request file is gone (processed), then reload
-  function watchRequest(r, tries = 20) {
-    setTimeout(async () => {
-      if (state.source !== 'github') return;
-      try {
-        const cur = await gh.raw(fileFor('requests', r.id));
-        if (cur.status === 'failed') { state.requests.set(r.id, cur); toast(`요청이 실패했어요: ${cur.error || ''}`, true); afterRequestChange(cur); return; }
-        if (tries > 1) watchRequest(r, tries - 1);
-      } catch (e) {
-        if (e.status === 404) {
-          toast(REQUEST_DONE[r.kind] || '결과가 들어왔어요.');
-          const keep = { tab: state.tab, claim: state.selectedClaim };
-          await useSource('github');
-          if (keep.tab === 'home') {
-            if (keep.claim && state.claims.has(keep.claim)) { state.selectedClaim = keep.claim; renderSidebar(); renderGraph(); showClaim(keep.claim); }
-            else if (r.paper && state.papers.has(r.paper)) showPaper(r.paper);
-          }
-        } else if (tries > 1) watchRequest(r, tries - 1);
+  // while any request is pending, check every 20 s whether its file is gone (processed) or failed
+  let polling = false;
+  function watchRequest() {
+    if (polling) return;
+    polling = true;
+    const tick = async () => {
+      const pending = [...state.requests.values()].filter(r => r.status === 'pending');
+      if (state.source !== 'github' || !pending.length) { polling = false; return; }
+      let done = null;
+      for (const r of pending) {
+        try {
+          const cur = await gh.raw(fileFor('requests', r.id));
+          if (cur.status === 'failed') { state.requests.set(r.id, cur); toast(`${REQUEST_LABEL[r.kind] || '요청'} 실패: ${cur.error || ''}`, true); afterRequestChange(cur); }
+          else if (cur.status === 'dropped') state.requests.delete(r.id);
+        } catch (e) {
+          if (e.status === 404) { done = r; break; }
+        }
       }
-    }, 30000);
+      if (done) {
+        toast(REQUEST_DONE[done.kind] || '결과가 들어왔어요.');
+        const keep = { tab: state.tab, claim: state.selectedClaim };
+        await useSource('github');
+        if (keep.tab === 'home') {
+          if (keep.claim && state.claims.has(keep.claim)) { state.selectedClaim = keep.claim; renderSidebar(); renderGraph(); showClaim(keep.claim); }
+          else if (done.paper && state.papers.has(done.paper)) showPaper(done.paper);
+        }
+      }
+      setTimeout(tick, 20000);
+    };
+    setTimeout(tick, 20000);
   }
 
   // ---------- actions ----------
@@ -1215,8 +1240,10 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     }
     else if (action === 'request-drop') { dropRequest(id); }
     else if (action === 'request-retry') {
-      const r = { ...state.requests.get(id), status: 'pending', error: '', created_at: today() };
-      save([{ dir: 'requests', data: r }], `Retry request ${id}`, { quiet: true }).then(ok => { if (ok) { afterRequestChange(r); watchRequest(r); } });
+      const r = { ...state.requests.get(id), status: 'pending', error: '', created_at: today(), requested_at: new Date().toISOString() };
+      save([{ dir: 'requests', data: r }], `Retry request ${id}`, { quiet: true }).then(ok => {
+        if (ok) { toast('다시 요청했어요.'); afterRequestChange(r); watchRequest(); }
+      });
     }
     else if (action === 'summary-edit') showPaper(id, true);
     else if (action === 'paper-view') showPaper(id);
@@ -1245,10 +1272,13 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     }
   });
 
-  // a failed request is removed by writing it as dropped (the next request run deletes it)
+  // 취소하기: the request is written as dropped (the next request run deletes the file)
   async function dropRequest(id) {
     const r = { ...state.requests.get(id), status: 'dropped' };
-    if (await save([{ dir: 'requests', data: r }], `Drop request ${id}`, { quiet: true })) { state.requests.delete(id); afterRequestChange(r); }
+    if (await save([{ dir: 'requests', data: r }], `Cancel request ${id}`, { quiet: true })) {
+      state.requests.delete(id); afterRequestChange(r);
+      toast('취소했어요. 이미 돌고 있는 처리는 끝까지 갈 수 있어요.');
+    }
   }
 
   document.addEventListener('submit', async e => {

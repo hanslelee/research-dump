@@ -256,3 +256,8 @@ details.add-rel summary { cursor: pointer; font-size: 13px; color: var(--accent)
   .topbar { flex-wrap: wrap; }
   .sidebar, .detail { border: 0; border-bottom: 1px solid var(--line); }
 }
+
+.req { border: 1px dashed var(--line); border-radius: 8px; padding: 6px 8px; margin: 6px 0; font-size: 12px; color: var(--quiet); }
+.req.failed { border-color: var(--conflicts); color: var(--ink); }
+.req .actions { margin-top: 4px; }
+.req-elapsed { font-variant-numeric: tabular-nums; color: var(--ink); }
