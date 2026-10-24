@@ -38,7 +38,7 @@
     relations: [],
     filters: {},              // axis -> Set of allowed values
     show: { extends: true, conflicts: true, 'same-author': false, pending: true },
-    only: { industry: false, starred: false },
+    only: { industry: false, starred: false, nosummary: false },
     selectedClaim: null,
   };
   let cy = null;
@@ -205,6 +205,7 @@
       if (linked && !linked.has(p.id)) return false;
       if (state.only.industry && !p.meta?.industry) return false;
       if (state.only.starred && !String(p.meta?.popularity || '').startsWith('★')) return false;
+      if (state.only.nosummary && p.summary?.claim) return false;
       for (const [axis, def] of Object.entries(AXES)) {
         const allowed = state.filters[axis];
         const v = p.tags?.[axis];
@@ -421,9 +422,13 @@
     // view filters
     const nInd = [...state.papers.values()].filter(p => p.meta?.industry).length;
     const nStar = [...state.papers.values()].filter(p => String(p.meta?.popularity || '').startsWith('★')).length;
+    const noSum = [...state.papers.values()].filter(p => !p.summary?.claim);
+    const nNoSum = noSum.length, nNoAbs = noSum.filter(p => !String(p.abstract || '').trim()).length;
     $('#view-toggles').innerHTML = `
       <label><input type="checkbox" data-only="industry" ${state.only.industry ? 'checked' : ''}>기업 논문만<span class="count">${nInd}</span></label>
-      <label><input type="checkbox" data-only="starred" ${state.only.starred ? 'checked' : ''}>★ 이상만<span class="count">${nStar}</span></label>`;
+      <label><input type="checkbox" data-only="starred" ${state.only.starred ? 'checked' : ''}>★ 이상만<span class="count">${nStar}</span></label>
+      <label><input type="checkbox" data-only="nosummary" ${state.only.nosummary ? 'checked' : ''}>요약 없음만<span class="count">${nNoSum}</span></label>
+      ${nNoSum ? `<p class="hint">요약 없음 ${nNoSum}편 중 초록 없음 ${nNoAbs}편 (초록이 없으면 자동 요약이 안 돼요)</p>` : ''}`;
     $('#view-toggles').onchange = e => { state.only[e.target.dataset.only] = e.target.checked; renderGraph(); };
 
     // tag filters
