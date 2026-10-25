@@ -34,9 +34,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Check out data (caller repository)
+      - name: Check out data (caller repository, latest)
         uses: actions/checkout@v5
         with:
+          ref: ${{ github.ref_name }}
           path: data
 
       - name: Check out code (research-dump)
@@ -56,7 +57,7 @@ jobs:
           git config user.name "research-dump bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # bundle.json is rebuilt at the end and the web page corrects stale entries, so either side may win
-          echo "bundle.json merge=keep" >> .git/info/attributes
+          printf 'bundle.json merge=keep\nembeddings/papers.json merge=keep\n' >> .git/info/attributes
           git config merge.keep.driver true
 
       - name: Update old data files to the current shape
@@ -139,6 +140,20 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python code/pipeline/notify.py --data data
 
+      - name: Requests left over from the web page (safety net)
+        continue-on-error: true
+        timeout-minutes: 20
+        env:
+          S2_API_KEY: ${{ secrets.S2_API_KEY }}
+          OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          pip install --quiet pypdf
+          python code/pipeline/requests_run.py --data data
+
       - name: Bundle all files for the web page
         if: ${{ !cancelled() }}
         continue-on-error: true
@@ -154,7 +169,12 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes"
           else
-            git commit -m "Weekly run $(date -u +%F)"
-            git pull --rebase
-            git push
+            git commit -q -m "Weekly run $(date -u +%F)"
+            for i in 1 2 3 4 5; do
+              if git pull --rebase -q && git push -q; then echo "Saved"; exit 0; fi
+              git rebase --abort 2>/dev/null || true
+              sleep $((i * 5))
+            done
+            echo "::error::Could not save the results to the repository (push failed 5 times)"
+            exit 1
           fi

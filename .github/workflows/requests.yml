@@ -26,15 +26,21 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       PYTHONUNBUFFERED: "1"
+      CHECKPOINT: "1"           # save after every request
+      TIME_BUDGET: "1200"       # stop starting new requests after 20 minutes; the rest continues in a new run
     permissions:
       contents: write
+      actions: write            # to start the next run when requests are left
     steps:
-      - name: Check out data (caller repository)
+      # The branch head, not the commit that triggered the run: a run that waited in the queue
+      # must see what earlier runs already saved, or its results clash with theirs.
+      - name: Check out data (caller repository, latest)
         uses: actions/checkout@v5
         with:
+          ref: ${{ github.ref_name }}
           path: data
 
       - name: Check out code (research-dump)
@@ -50,6 +56,15 @@ jobs:
 
       - name: Install PDF reader
         run: pip install --quiet pypdf
+
+      - name: Set up git
+        working-directory: data
+        run: |
+          git config user.name "research-dump bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # generated files: either side may win, they are rebuilt anyway
+          printf 'bundle.json merge=keep\nembeddings/papers.json merge=keep\n' >> .git/info/attributes
+          git config merge.keep.driver true
 
       - name: Process requests
         env:
@@ -67,14 +82,29 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: data
         run: |
-          git config user.name "research-dump bot"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          echo "bundle.json merge=keep" >> .git/info/attributes
-          git config merge.keep.driver true
           git add -A
           if git diff --cached --quiet; then
             echo "No changes"
-          else
-            git commit -m "Requests $(date -u +%F)"
-            for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done
+            exit 0
+          fi
+          git commit -q -m "Requests $(date -u +%F)"
+          for i in 1 2 3 4 5; do
+            if git pull --rebase -q && git push -q; then echo "Saved"; exit 0; fi
+            git rebase --abort 2>/dev/null || true
+            sleep $((i * 5))
+          done
+          echo "::error::Could not save the results to the repository (push failed 5 times)"
+          exit 1
+
+      - name: Start the next run if requests are left
+        if: ${{ success() }}
+        working-directory: data
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git pull -q --rebase || true
+          if grep -lq '"status": "pending"' requests/*.json 2>/dev/null; then
+            echo "Requests left: starting the next run"
+            gh workflow run requests.yml --ref "${{ github.ref_name }}" -R "${{ github.repository }}" \
+              || echo "::warning::Could not start the next run (copy the latest requests.yml with 'actions: write'). The weekly run will pick them up."
           fi

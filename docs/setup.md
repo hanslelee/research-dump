@@ -14,7 +14,8 @@ Your data never enters this repository.
 1. Create a **private** repository, e.g. `research-dump-data`.
 2. Copy everything in [`templates/data-repo/`](../templates/data-repo) into it
    (`config.json`, the four empty folders, `.github/workflows/weekly.yml` and `.github/workflows/requests.yml`).
-   `requests.yml` runs the **관계 찾기** and **연구 주제 추천** buttons; without it those requests wait forever.
+   `requests.yml` runs the buttons that need GitHub Actions (관계 찾기, 연구 주제 추천, 관련 논문 찾기/웹 검색, 추가하기);
+   without it those requests wait forever. It needs `actions: write` so a run that runs out of time can start the next one.
 3. Edit `config.json`: set `scope` to your research scope in one line and pick a model for each agent.
 
 ## 2. Add secrets

@@ -24,12 +24,14 @@ import html
 import json
 import os
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import addpaper  # noqa: E402
 import bundle  # noqa: E402
+import checkpoint  # noqa: E402
 import claimrel  # noqa: E402
 import compare  # noqa: E402
 import refs  # noqa: E402
@@ -65,7 +67,12 @@ def run(data_dir: Path, today: str, log=print, chat=None, fetch=None, find=None,
     papers = load_dir(data_dir / "papers")
     viewer = (read_json(data_dir / "config.json", {}).get("notify") or {}).get("viewer_url", "")
     done = 0
+    budget = float(os.environ.get("TIME_BUDGET", "0") or 0)  # seconds; 0 = no limit
+    started = time.time()
     for f in files:
+        if budget and time.time() - started > budget:
+            log("requests: out of time, the rest goes to the next run")
+            break
         req = json.loads(f.read_text())
         if req.get("status") == "dropped":  # removed on the web page
             f.unlink()
@@ -120,9 +127,11 @@ def run(data_dir: Path, today: str, log=print, chat=None, fetch=None, find=None,
         except Exception as e:  # keep the request so the page can show the error
             log(f"requests: {f.name} failed ({e})")
             write_json(f, {**req, "status": "failed", "error": str(e)[:300], "failed_at": today})
+            checkpoint.save(data_dir, f"Request failed: {kind}", log)
             continue
         f.unlink()
         done += 1
+        checkpoint.save(data_dir, f"Request done: {kind} {pid or req.get('claim') or ''}".strip(), log)
         if msg is None:
             continue
         if viewer:

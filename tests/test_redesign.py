@@ -504,3 +504,42 @@ class SeminalTest(Base):
         self.assertTrue(items[0]["seminal"])
         self.assertGreater(items[0]["cites_per_month"], 30)
         self.assertEqual(judges, ["big"])
+
+
+class RequestRunRobustnessTest(Base):
+    def test_time_budget_leaves_the_rest_pending(self):
+        self.put("papers", paper("arxiv:t", "Target"))
+        self.put("papers", paper("arxiv:c", "Contra study"))
+        (self.d / "requests").mkdir()
+        for i in range(3):
+            self.put("requests", {"id": f"req:{i}", "kind": "relations", "paper": "arxiv:t", "status": "pending"})
+        def slow(a, s, u, **kw):  # busy wait: other tests replace time.sleep
+            import time
+            t = time.perf_counter()
+            while time.perf_counter() - t < 0.05:
+                pass
+            return fake_compare(a, s, u)
+        with mock.patch.dict(os.environ, {"TIME_BUDGET": "0.01"}):
+            n = requests_run.run(self.d, "2026-10-25", log=lambda *_: None, chat=slow)
+        self.assertEqual(n, 1)
+        self.assertEqual(len(self.load("requests")), 2)  # still pending for the next run
+
+    def test_checkpoint_aborts_a_conflicting_rebase(self):
+        run = lambda *a, cwd: subprocess.run(a, cwd=cwd, check=True, capture_output=True)
+        remote, a, b = self.d / "remote.git", self.d / "a", self.d / "b"
+        run("git", "init", "-q", "--bare", "-b", "main", str(remote), cwd=self.d)
+        for w in (a, b):
+            run("git", "clone", "-q", str(remote), str(w), cwd=self.d)
+            run("git", "config", "user.email", "t@t", cwd=w)
+            run("git", "config", "user.name", "t", cwd=w)
+        (a / "x.json").write_text('{"v": 0}\n')
+        run("git", "add", "-A", cwd=a); run("git", "commit", "-q", "-m", "init", cwd=a); run("git", "push", "-q", "origin", "HEAD:main", cwd=a)
+        run("git", "pull", "-q", "origin", "main", cwd=b)
+        run("git", "branch", "-q", "--set-upstream-to=origin/main", cwd=b)
+        (a / "x.json").write_text('{"v": 1}\n')
+        run("git", "commit", "-qam", "a", cwd=a); run("git", "push", "-q", "origin", "HEAD:main", cwd=a)
+        (b / "x.json").write_text('{"v": 2}\n')
+        import checkpoint
+        with mock.patch.dict(os.environ, {"CHECKPOINT": "1"}), mock.patch.object(checkpoint.time, "sleep", lambda *_: None):
+            self.assertFalse(checkpoint.save(b, "conflict", log=lambda *_: None))
+        self.assertFalse((b / ".git" / "rebase-merge").exists() or (b / ".git" / "rebase-apply").exists())

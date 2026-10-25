@@ -4,6 +4,7 @@ Active only when CHECKPOINT=1 (set by the GitHub workflow). Locally it does noth
 """
 import os
 import subprocess
+import time
 from pathlib import Path
 
 
@@ -15,9 +16,14 @@ def save(data_dir: Path, message: str, log=print) -> bool:
     if git("diff", "--cached", "--quiet").returncode == 0:
         return False
     git("commit", "-q", "-m", message)
-    for _ in range(3):
-        if git("pull", "--rebase", "-q").returncode == 0 and git("push", "-q").returncode == 0:
+    for i in range(3):
+        pulled = git("pull", "--rebase", "-q")
+        if pulled.returncode == 0 and git("push", "-q").returncode == 0:
             log(f"checkpoint: saved ({message})")
             return True
+        if pulled.returncode != 0:
+            git("rebase", "--abort")  # never leave the repository half-rebased
+            log(f"checkpoint: pull failed ({(pulled.stderr or pulled.stdout).strip()[:200]})")
+        time.sleep(3 * (i + 1))
     log(f"checkpoint: push failed, will retry at the end ({message})")
     return False
