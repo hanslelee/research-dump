@@ -18,6 +18,7 @@ import dedupe  # noqa: E402
 import embed  # noqa: E402
 import migrate  # noqa: E402
 import notify  # noqa: E402
+import refs as refs_mod  # noqa: E402
 import requests_run  # noqa: E402
 import screen  # noqa: E402
 import topics  # noqa: E402
@@ -445,3 +446,61 @@ class EmbedTest(Base):
         chat = lambda a, s, u, **kw: (asked.append((json.loads(u)["target"]["id"], [c["id"] for c in json.loads(u)["candidates"]])), fake_compare(a, s, u))[1]
         compare.run(self.d, "2026-10-24", log=lambda *_: None, chat=chat, embed_fn=word_vec)
         self.assertIn(("arxiv:new", ["arxiv:old"]), asked)  # no shared topic tag, still compared
+
+
+S2_REFS = {"data": [
+    {"isInfluential": True, "intents": ["methodology"], "citedPaper": {"paperId": "a1", "title": "Steering Llama 2 via CAA", "year": 2023,
+                                                                       "venue": "ACL", "citationCount": 620, "externalIds": {"ArXiv": "2312.06681"}}},
+    {"isInfluential": False, "intents": ["background"], "citedPaper": {"paperId": "a2", "title": "Background", "year": 2020, "citationCount": 50,
+                                                                        "externalIds": {}}},
+    {"citedPaper": {"paperId": None, "title": None}},
+]}
+
+
+class RefsTest(Base):
+    def test_fetch_and_weekly_only_liked_or_starred(self):
+        self.put("papers", paper("arxiv:l", "Liked", liked=True))
+        self.put("papers", paper("arxiv:s", "Star", meta={"popularity": "★"}))
+        self.put("papers", paper("arxiv:n", "Plain"))
+        asked = []
+        get = lambda url, headers=None: (asked.append(url.split("/paper/")[1].split("/")[0]), S2_REFS)[1]
+        self.assertEqual(refs_mod.run(self.d, "2026-10-25", log=lambda *_: None, get=get, pause=0), 2)
+        self.assertEqual(sorted(asked), ["ARXIV:l", "ARXIV:s"])
+        rec = json.loads((self.d / "refs" / "arxiv_l.json").read_text())
+        self.assertEqual((rec["id"], rec["total"]), ("arxiv:l", 2))
+        top = rec["items"][0]
+        self.assertEqual((top["id"], top["venue_short"], top["influential"], top["intents"]), ("arxiv:2312.06681", "ACL", True, ["methodology"]))
+        asked.clear()
+        refs_mod.run(self.d, "2026-10-30", log=lambda *_: None, get=get, pause=0)
+        self.assertEqual(asked, [])  # fresh files are not fetched again
+
+    def test_add_baseline_creates_approved_extends(self):
+        self.put("papers", paper("arxiv:t", "Target"))
+        (self.d / "requests").mkdir()
+        self.put("requests", {"id": "req:r", "kind": "add_paper", "query": "2312.06681", "cited_by": "arxiv:t", "status": "pending"})
+        requests_run.run(self.d, "2026-10-25", log=lambda *_: None, chat=fake_all, find=lambda q, log: dict(CAA))
+        rels = list(self.load("relations").values())
+        self.assertEqual([(r["from"], r["to"], r["type"], r["status"]) for r in rels], [("arxiv:t", "arxiv:2312.06681", "extends", "approved")])
+
+
+class SeminalTest(Base):
+    def test_concepts_add_most_cited_and_judge_with_summary_model(self):
+        cfg = {**CONFIG, "llm": {**CONFIG["llm"], "summary": {**AGENT, "model": "big"}, "compare": {**AGENT, "model": "small"}}}
+        (self.d / "config.json").write_text(json.dumps(cfg))
+        self.put("claims", {"id": "claim:g", "text": "T", "status": "candidate", "version": 1})
+        judges = []
+
+        def chat(agent, system, user, **kw):
+            if "search queries" in system:
+                return {"text": '{"queries": ["q1"], "concepts": ["sycophancy"]}', "model": "m"}
+            judges.append(agent["model"])
+            return {"text": json.dumps({"results": [{"id": p["id"], "relevant": True, "reason": "r"} for p in json.loads(user)["papers"]]}), "model": "m"}
+        mk = lambda aid, t, c, **kw: {**collect.make_item(title=t, ids={"arxiv": aid}, published="2024-01-01"), "venue_short": "ICLR", "citations": c, **kw}
+        items = websearch.search(self.d, "claim:g", "2026-01-01", log=lambda *_: None, chat=chat, pause=0,
+                                 search_fn=lambda q, log: [mk("1", "Recent", 5)],
+                                 seminal_fn=lambda c, log: [mk("2", "Towards understanding sycophancy", 900, seminal=True)],
+                                 inst_fn=lambda c, log: {"institutions": [], "industry": False})
+        self.assertEqual([x["title"] for x in items], ["Towards understanding sycophancy", "Recent"])
+        self.assertTrue(items[0]["seminal"])
+        self.assertGreater(items[0]["cites_per_month"], 30)
+        self.assertEqual(judges, ["big"])

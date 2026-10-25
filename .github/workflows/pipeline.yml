@@ -101,6 +101,13 @@ jobs:
           OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
         run: python code/pipeline/metadata.py --data data
 
+      - name: References of liked and ★ papers (베이스라인)
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          S2_API_KEY: ${{ secrets.S2_API_KEY }}
+        run: python code/pipeline/refs.py --data data
+
       - name: Summary agent
         continue-on-error: true
         timeout-minutes: 25

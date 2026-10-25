@@ -183,8 +183,9 @@
     await Promise.all(Array.from({ length: 8 }, worker));
     const config = paths.has('config.json') ? await gh.raw('config.json') : null;
     const ids = new Set(entries.filter(([p]) => p.startsWith('papers/')).map(([, d]) => d.id));
+    const refFiles = new Set(blobs.filter(t => /^refs\/[^/]+\.json$/.test(t.path)).map(t => t.path));
     return { config, ...fromEntries(entries), excluded: (bundle?.excluded || []).filter(x => !ids.has(x.id)),
-      keywords: bundle?.keywords || {}, fetched: toFetch.length, bundled: !!bundle };
+      keywords: bundle?.keywords || {}, fetched: toFetch.length, bundled: !!bundle, refFiles };
   }
 
   // ---------- saving ----------
@@ -226,6 +227,8 @@
     state.requests = new Map((data.requests || []).filter(r => r.status !== 'dropped').map(r => [r.id, r]));
     state.relations = data.relations;
     state.excluded = data.excluded || [];
+    state.refFiles = data.refFiles || new Set();
+    state.refs = new Map();
     state.keywords = data.keywords || {};
     const topics = new Set(state.config.topics || []);
     for (const p of state.papers.values()) for (const t of p.tags?.topic || []) topics.add(t);
@@ -569,9 +572,9 @@
       <button type="button" data-action="request" data-kind="topics" data-id="${esc(p.id)}" ${busy('topics') ? 'disabled' : ''}>${busy('topics') ? '추천 받는 중...' : '연구 주제 추천'}</button>`;
   }
 
-  const REQUEST_LABEL = { topics: '연구 주제 추천', relations: '관계 찾기', claim_papers: '저장소에서 관련 논문 찾기', claim_web: '관련 논문 웹 검색', add_paper: '논문 추가' };
+  const REQUEST_LABEL = { refs: '참고문헌 불러오기', topics: '연구 주제 추천', relations: '관계 찾기', claim_papers: '저장소에서 관련 논문 찾기', claim_web: '관련 논문 웹 검색', add_paper: '논문 추가' };
   const REQUEST_DONE = { topics: '연구 주제 추천 결과가 들어왔어요.', relations: '관계 찾기 결과가 들어왔어요.',
-    claim_papers: '관련 논문 찾기 결과가 들어왔어요.', claim_web: '웹 추천 논문이 들어왔어요.', add_paper: '논문을 추가하고 요약과 관계 초안까지 만들었어요.' };
+    refs: '참고문헌을 불러왔어요.', claim_papers: '관련 논문 찾기 결과가 들어왔어요.', claim_web: '웹 추천 논문이 들어왔어요.', add_paper: '논문을 추가하고 요약과 관계 초안까지 만들었어요.' };
 
   function requestNoteList(filter) {
     return [...state.requests.values()].filter(filter).map(r => {
@@ -585,7 +588,7 @@
         : `<div class="req">${what}${target} 진행 중 · ${since} <div class="actions">${buttons}</div></div>`;
     }).join('');
   }
-  const requestNotes = p => requestNoteList(r => r.paper === p.id && r.kind !== 'add_paper');
+  const requestNotes = p => requestNoteList(r => r.paper === p.id && !['add_paper', 'refs'].includes(r.kind));
 
   // "14초", "1분 40초", "1시간 5분" since the request was made; updated every second
   function elapsed(iso) {
@@ -608,6 +611,114 @@
       <textarea name="memo" rows="${rows}" placeholder="메모 (나만 보는 생각, 읽은 소감, 아이디어)">${esc(memo)}</textarea>
       <div class="actions"><button type="submit" class="mini">메모 저장</button></div>
     </form>`;
+
+  // ---------- 베이스라인 · 주요 참고 논문 (Semantic Scholar references) ----------
+  const SHORT_VENUES = ['NeurIPS', 'ICML', 'ICLR', 'ACL', 'EMNLP', 'NAACL', 'EACL', 'COLING', 'COLM', 'AAAI', 'IJCAI',
+    'CVPR', 'ICCV', 'ECCV', 'TMLR', 'JMLR', 'TACL', 'KDD', 'WWW', 'FAccT', 'CCS', 'INLG', 'AISTATS', 'UAI', 'SaTML'];
+  const REF_FIELDS = 'isInfluential,intents,citedPaper.paperId,citedPaper.title,citedPaper.year,citedPaper.venue,citedPaper.publicationVenue,citedPaper.citationCount,citedPaper.externalIds,citedPaper.url,citedPaper.authors,citedPaper.publicationDate';
+  const normTitle = t => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const s2RefOf = p => {
+    const ids = p.ids || {};
+    if (ids.s2) return ids.s2;
+    if (p.id.startsWith('arxiv:')) return 'ARXIV:' + p.id.slice(6);
+    if (p.id.startsWith('doi:')) return 'DOI:' + p.id.slice(4);
+    if (p.id.startsWith('acl:')) return 'ACL:' + p.id.slice(4);
+    if (ids.arxiv) return 'ARXIV:' + ids.arxiv.replace(/v\d+$/, '');
+    if (ids.doi) return 'DOI:' + ids.doi;
+    return null;
+  };
+  function shortVenue(row) {
+    const pv = row.publicationVenue || {};
+    const names = [pv.name || '', ...(pv.alternate_names || []), row.venue || ''];
+    for (const v of SHORT_VENUES) if (names.some(n => new RegExp(`(^|[^A-Za-z])${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z]|$)`).test(n))) return v;
+    const v = row.venue || pv.name || '';
+    return !v || /arxiv/i.test(v) ? 'arXiv' : (v.length > 40 ? v.slice(0, 38) + '…' : v);
+  }
+  // same shape as pipeline/refs.py ref_item
+  function refItem(r) {
+    const c = r.citedPaper || {};
+    if (!c.title) return null;
+    const ext = c.externalIds || {};
+    const id = ext.ArXiv ? `arxiv:${ext.ArXiv.replace(/v\d+$/, '')}` : ext.DOI ? `doi:${ext.DOI.toLowerCase()}` : `s2:${c.paperId}`;
+    return { id, title: c.title.replace(/\s+/g, ' ').trim(), year: c.year, published: c.publicationDate || '', venue_short: shortVenue(c),
+      citations: c.citationCount || 0, influential: !!r.isInfluential, intents: r.intents || [], url: c.url || '',
+      ids: { arxiv: ext.ArXiv, doi: ext.DOI, s2: c.paperId }, authors: (c.authors || []).slice(0, 6).map(a => a.name) };
+  }
+  const isKeyRef = x => x.influential || (x.intents || []).includes('methodology');
+
+  async function loadRefs(id) {
+    const path = fileFor('refs', id);
+    if (state.refs.has(id) || state.source !== 'github' || !state.refFiles.has(path)) return;
+    state.refs.set(id, 'loading');
+    try { state.refs.set(id, await gh.raw(path)); } catch { state.refs.delete(id); }
+    rerenderRefs(id);
+  }
+
+  // [불러오기]: try Semantic Scholar straight from the browser (seconds); if that is blocked, ask GitHub Actions
+  async function fetchRefs(id) {
+    const p = state.papers.get(id); if (!p) return;
+    if (state.source !== 'github') { toast('이 기능은 내 저장소를 연결해야 쓸 수 있어요.', true); return; }
+    const ref = s2RefOf(p);
+    if (!ref) { toast('이 논문은 Semantic Scholar에서 찾을 id가 없어요.', true); return; }
+    state.refs.set(id, 'loading'); rerenderRefs(id);
+    try {
+      const r = await fetch(`https://api.semanticscholar.org/graph/v1/paper/${encodeURIComponent(ref).replace('%3A', ':')}/references?fields=${REF_FIELDS}&limit=1000`);
+      if (!r.ok) throw new Error(String(r.status));
+      const items = ((await r.json()).data || []).map(refItem).filter(Boolean).sort((a, b) => b.citations - a.citations);
+      if (!items.length) throw new Error('empty');
+      const rec = { id, paper: id, total: items.length, items, fetched_at: today() };
+      state.refs.set(id, rec);
+      state.refFiles.add(fileFor('refs', id));
+      rerenderRefs(id);
+      save([{ dir: 'refs', data: rec }], `References of ${id}`, { quiet: true });
+    } catch {
+      state.refs.delete(id);
+      await makeRequest('refs', id);
+      rerenderRefs(id);
+    }
+  }
+
+  function refRow(p, x) {
+    const inRepo = state.papers.has(x.id) ? x.id : [...state.papers.values()].find(q => normTitle(q.title) === normTitle(x.title))?.id;
+    const linked = inRepo && state.relations.some(r => r.from === p.id && r.to === inRepo && r.type === 'extends' && r.status !== 'rejected');
+    const adding = [...state.requests.values()].some(r => r.kind === 'add_paper' && r.cited_by === p.id && r.status !== 'failed' && r.ref_id === x.id);
+    const tags = [x.year, x.venue_short && x.venue_short !== 'arXiv' ? x.venue_short : '', `인용 ${x.citations}`,
+      (x.intents || []).includes('methodology') ? '방법론' : '', x.influential ? '중요' : ''].filter(Boolean).join(' · ');
+    const action = inRepo
+      ? (linked ? '<span class="hint">저장소에 있음 · 연결됨</span>'
+        : `<span class="hint">저장소에 있음</span> <button type="button" class="mini" data-action="ref-link" data-id="${esc(p.id)}" data-to="${esc(inRepo)}">extends로 연결</button>`)
+      : adding ? '<span class="hint">추가 중...</span>'
+      : `<button type="button" class="mini" data-action="ref-add" data-id="${esc(p.id)}" data-ref="${esc(x.id)}">추가하기</button>`;
+    return `<div class="ref-row"><div>${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a>` : esc(x.title)}</div>
+      <div class="meta">${esc(tags)}</div><div class="actions">${action}</div></div>`;
+  }
+
+  function refsInner(p) {
+    const rec = state.refs.get(p.id);
+    const notes = requestNoteList(r => (r.kind === 'refs' && r.paper === p.id) || (r.kind === 'add_paper' && r.cited_by === p.id));
+    if (rec === 'loading') return '<p class="hint">불러오는 중...</p>' + notes;
+    if (!rec) {
+      if (state.refFiles?.has(fileFor('refs', p.id))) { loadRefs(p.id); return '<p class="hint">불러오는 중...</p>' + notes; }
+      const busy = [...state.requests.values()].some(r => r.kind === 'refs' && r.paper === p.id && r.status !== 'failed');
+      return `${notes}${busy ? '' : `<button type="button" class="mini" data-action="refs-fetch" data-id="${esc(p.id)}">불러오기</button>`}
+        <p class="hint">Semantic Scholar의 인용 정보에서 이 논문이 방법론으로 쓰거나 중요하게 인용한 논문을 보여줘요.</p>`;
+    }
+    const items = rec.items || [];
+    const key = items.filter(isKeyRef).slice(0, 10);
+    const rest = items.filter(x => !key.includes(x));
+    return `${notes}${key.map(x => refRow(p, x)).join('') || '<p class="hint">방법론·중요 인용으로 표시된 참고문헌이 없어요. 아래 전체 목록을 봐주세요.</p>'}
+      ${rest.length ? `<details class="add-rel"><summary>전체 참고문헌 보기 (${items.length}편)</summary>${rest.slice(0, 150).map(x => refRow(p, x)).join('')}</details>` : ''}
+      <p class="meta">마지막 확인: ${esc(rec.fetched_at || '')} <button type="button" class="mini quiet" data-action="refs-fetch" data-id="${esc(p.id)}">다시 불러오기</button></p>`;
+  }
+
+  // open=true: shown expanded (paper panel); false: folded (list row)
+  const refsBox = (p, open) => `<details class="refs-box" ${open ? 'open' : ''}><summary>베이스라인 · 주요 참고 논문</summary>
+    <div class="refs" data-refs="${esc(p.id)}">${refsInner(p)}</div></details>`;
+
+  function rerenderRefs(id) {
+    const p = state.papers.get(id); if (!p) return;
+    for (const el of document.querySelectorAll(`.refs[data-refs="${CSS.escape(id)}"]`)) el.innerHTML = refsInner(p);
+  }
 
   // ---------- detail panel (home) ----------
   function showEmptyDetail() {
@@ -669,6 +780,7 @@
       <h4>요약</h4>
       ${summary}
       ${p.abstract ? `<details class="abstract"><summary>초록 보기</summary><p>${esc(p.abstract)}</p></details>` : ''}
+      ${refsBox(p, true)}
       <h4>관계</h4>
       ${[...out.map(r => relCard(r, r.to)), ...inc.map(r => relCard(r, r.from))].join('') || '<p class="hint">아직 관계가 없어요.</p>'}
       <details class="add-rel">
@@ -780,7 +892,7 @@
   }
 
   // 관련 논문 웹 검색 results stored on the claim: show 10, sorted by the chosen order
-  const WEB_SORTS = { venue: '좋은 학회', citations: '인용수', company: '탑 기업' };
+  const WEB_SORTS = { venue: '좋은 학회', citations: '인용수', speed: '인용 속도', company: '탑 기업' };
   function webSuggestions(c, id) {
     const ws = c.web_suggestions;
     const notes = requestNoteList(r => r.claim === id && r.kind === 'claim_web');
@@ -790,16 +902,18 @@
     const items = [...(ws.items || [])].sort({
       venue: (a, b) => (b.top_venue - a.top_venue) || cit(b) - cit(a),
       citations: (a, b) => cit(b) - cit(a),
+      speed: (a, b) => (b.cites_per_month ?? -1) - (a.cites_per_month ?? -1) || cit(b) - cit(a),
       company: (a, b) => ((b.top_orgs || []).length > 0) - ((a.top_orgs || []).length > 0) || cit(b) - cit(a),
     }[sort]).slice(0, 10);
     const adding = new Set([...state.requests.values()].filter(r => r.kind === 'add_paper' && r.status !== 'failed' && r.item).map(r => r.item.id));
     const row = x => {
       const inRepo = state.papers.has(x.id);
       const meta = [x.venue_short && x.venue_short !== 'arXiv' ? `${x.venue_short}${x.year ? ` ${x.year}` : ''}` : (x.year || ''),
-        (x.institutions || []).slice(0, 2).join(', ') + ((x.institutions || []).length > 2 ? ' 외' : ''), `인용 ${cit(x)}`].filter(Boolean).join(' · ');
+        (x.institutions || []).slice(0, 2).join(', ') + ((x.institutions || []).length > 2 ? ' 외' : ''), `인용 ${cit(x)}`,
+        x.cites_per_month != null ? `월 ${x.cites_per_month}회` : ''].filter(Boolean).join(' · ');
       return `<div class="rel web">
         <div><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a>
-          ${x.top_venue ? '<span class="chip">좋은 학회</span>' : ''}${(x.top_orgs || []).map(o => `<span class="chip">${esc(o)}</span>`).join('')}</div>
+          ${x.seminal ? '<span class="chip">대표 논문</span>' : ''}${x.top_venue ? '<span class="chip">좋은 학회</span>' : ''}${(x.top_orgs || []).map(o => `<span class="chip">${esc(o)}</span>`).join('')}</div>
         <p class="meta">${esc(meta)}</p>
         ${x.reason ? `<p class="meta">${esc(x.reason)}</p>` : ''}
         <div class="actions">${inRepo ? '<span class="hint">저장소에 있음</span>'
@@ -964,6 +1078,7 @@
         <div class="actions wrap">${requestButtons(p)}<button type="button" class="quiet" data-action="focus" data-id="${esc(p.id)}">그래프에서 보기</button></div>
         ${requestNotes(p)}
         <b class="label">메모</b>${memoForm('paper', p.id, p.memo, 5)}
+        ${refsBox(p, false)}
       </div>` : ''}
       <button type="button" class="row-toggle quiet mini" data-action="row-toggle" data-id="${esc(p.id)}">${open ? '접기' : '펼치기'}</button>
     </div>`;
@@ -1130,6 +1245,7 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
       relations: '관계 찾기를 요청했어요. 1~3분 뒤 이 논문의 관계에 후보가 생겨요.',
       claim_papers: '관련 논문 찾기를 요청했어요. 1~3분 뒤 관련 논문에 후보가 생겨요.',
       claim_web: '웹 검색을 요청했어요. 2~4분 뒤 웹 추천 논문이 보여요.',
+      refs: '브라우저에서 바로 불러오지 못해서 GitHub Actions로 요청했어요. 1분쯤 걸려요.',
       add_paper: '논문 추가를 요청했어요. 저장, 요약, 관계 초안까지 1~3분 걸려요.',
     }[kind]);
     afterRequestChange(r);
@@ -1232,6 +1348,17 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     else if (action === 'paper-resummarize') resummarize(id, b);
     else if (action === 'request') makeRequest(b.dataset.kind, id);
     else if (action === 'claim-papers') makeRequest('claim_papers', null, { claim: id });
+    else if (action === 'refs-fetch') { state.refs.delete(id); fetchRefs(id); }
+    else if (action === 'ref-add') {
+      const rec = state.refs.get(id), x = rec?.items?.find(i => i.id === b.dataset.ref);
+      if (x) makeRequest('add_paper', null, { query: x.ids?.arxiv || x.title, cited_by: id, ref_id: x.id }).then(() => rerenderRefs(id));
+    }
+    else if (action === 'ref-link') {
+      const to = b.dataset.to;
+      const rel = { id: newId('rel'), from: id, to, layer: '0', type: 'extends', reason: '참고문헌에서 베이스라인으로 연결 (Semantic Scholar 인용 정보)',
+        status: 'approved', model: 'citation', created_at: today(), source: 'refs' };
+      save([{ dir: 'relations', data: rel }], `Baseline: ${id} extends ${to}`).then(() => { rerenderRefs(id); if (state.tab === 'home') renderGraph(); });
+    }
     else if (action === 'claim-web') makeRequest('claim_web', null, { claim: id });
     else if (action === 'web-sort') { state.topics.webSort = b.dataset.sort; showClaim(id); }
     else if (action === 'web-add') {

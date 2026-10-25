@@ -7,16 +7,19 @@ Kinds:
   topics        연구 주제 추천: research topic candidates from the paper and its linked papers (topics.recommend)
   claim_papers  저장소에서 관련 논문 찾기: a research topic vs every paper (claimrel.link)
   claim_web     관련 논문 웹 검색: Semantic Scholar search for a research topic -> web_suggestions on the claim
+  refs          베이스라인 · 주요 참고 논문: the paper's references from Semantic Scholar -> refs/<paper>.json
 
   add_paper     추가하기: add a paper by arXiv id or title, tag and summarize it, then draft relations:
                 from a research topic screen (claim set): with that topic + 관계 찾기 against other papers
                 from the 논문 목록 tab (no claim): with every research topic that is not retired
+                from a paper's 참고 논문 list (cited_by set): plus an approved "cited_by extends new paper" relation
 
 A finished request file is deleted (the web page sees it disappear and reloads).
 A failed one stays with status "failed" and the error, so the web page can show it and offer a retry.
 """
 import argparse
 import datetime as dt
+import hashlib
 import html
 import json
 import os
@@ -29,9 +32,10 @@ import addpaper  # noqa: E402
 import bundle  # noqa: E402
 import claimrel  # noqa: E402
 import compare  # noqa: E402
+import refs  # noqa: E402
 import websearch  # noqa: E402
 import topics  # noqa: E402
-from common import load_dir, read_json, write_json  # noqa: E402
+from common import file_for, load_dir, read_json, write_json  # noqa: E402
 
 
 def telegram(text, log=print):
@@ -44,6 +48,15 @@ def telegram(text, log=print):
         urllib.request.urlopen(req, timeout=30).read()
     except Exception as e:
         log(f"requests: telegram failed ({e})")
+
+
+def add_extends(data_dir: Path, citing: str, cited: str, today: str):
+    """The citing paper cites `cited` as a baseline: an approved extends relation (it is a citation fact)."""
+    rel = {"id": "rel:" + hashlib.sha1(f"{citing}|{cited}|extends".encode()).hexdigest()[:12], "from": citing, "to": cited,
+           "layer": "0", "type": "extends", "reason": "참고문헌에서 베이스라인으로 추가 (Semantic Scholar 인용 정보)",
+           "status": "approved", "model": "citation", "created_at": today, "source": "refs"}
+    write_json(data_dir / file_for("relations", rel["id"]), rel)
+    return rel
 
 
 def run(data_dir: Path, today: str, log=print, chat=None, fetch=None, find=None, search_fn=None):
@@ -68,7 +81,9 @@ def run(data_dir: Path, today: str, log=print, chat=None, fetch=None, find=None,
                 finder = (lambda q, log, it=req["item"]: dict(it)) if req.get("item") else find
                 pid, added = addpaper.add(data_dir, req.get("query", ""), today, log, chat=chat, **({"find": finder} if finder else {}))
                 title = html.escape(load_dir(data_dir / "papers")[pid]["title"])
-                if req.get("claim"):
+                if req.get("cited_by"):
+                    rels = [add_extends(data_dir, req["cited_by"], pid, today)]
+                elif req.get("claim"):
                     rels = claimrel.link(data_dir, req["claim"], today, log, chat=chat, paper_ids={pid})
                     rels += compare.find_for(data_dir, pid, today, log, chat=chat)
                 else:
@@ -82,6 +97,12 @@ def run(data_dir: Path, today: str, log=print, chat=None, fetch=None, find=None,
                 cid = req.get("claim")
                 rels = claimrel.link(data_dir, cid, today, log, chat=chat)
                 msg = f"<b>관련 논문 찾기</b> · {html.escape((claims.get(cid) or {}).get('text', cid or ''))}\n관계 초안 {len(rels)}개 (웹페이지에서 승인/거절)"
+            elif kind == "refs":
+                rec = refs.fetch(papers.get(pid) or {"id": pid}, log)
+                if not rec:
+                    raise ValueError("Semantic Scholar에 이 논문의 참고문헌 정보가 없어요")
+                refs.save(data_dir, pid, rec, today)
+                msg = None  # quick lookup: no Telegram message
             elif kind == "claim_web":
                 cid = req.get("claim")
                 kw = {"search_fn": search_fn} if search_fn else {}
@@ -102,6 +123,8 @@ def run(data_dir: Path, today: str, log=print, chat=None, fetch=None, find=None,
             continue
         f.unlink()
         done += 1
+        if msg is None:
+            continue
         if viewer:
             msg += f'\n<a href="{html.escape(viewer)}">웹페이지에서 보기</a>'
         telegram(msg, log)
