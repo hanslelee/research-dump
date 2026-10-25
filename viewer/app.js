@@ -363,10 +363,31 @@
   // ---------- graph ----------
   const shortTitle = t => { const s = String(t).split(':')[0]; return s.length > 30 ? s.slice(0, 28) + '…' : s; };
 
+  // A research topic is selected: the topic sits above (Layer 1), its papers in a band below (Layer 0),
+  // grouped by relation type, with one line from each paper up to the topic.
+  function claimLayout(papers, width, height) {
+    const types = new Map(claimLinks(state.selectedClaim).map(r => [r.from, r.type]));
+    const order = ['support', 'motivates', 'narrow', 'conflict', 'duplicate'];
+    const sorted = [...papers].sort((a, b) => order.indexOf(types.get(a.id)) - order.indexOf(types.get(b.id)) || a.title.localeCompare(b.title));
+    const perRow = Math.max(3, Math.min(8, Math.floor(width / 150)));
+    const rows = Math.ceil(sorted.length / perRow) || 1;
+    const gapX = Math.max(140, (width * 0.9) / Math.min(perRow, sorted.length || 1));
+    const top = Math.max(height * 0.55, 300), gapY = 120;
+    const pos = new Map();
+    sorted.forEach((p, i) => {
+      const r = Math.floor(i / perRow), inRow = Math.min(perRow, sorted.length - r * perRow), c = i % perRow;
+      pos.set(p.id, { x: width / 2 + (c - (inRow - 1) / 2) * gapX, y: top + r * gapY });
+    });
+    const bandW = Math.max(width * 0.94, Math.min(perRow, sorted.length) * gapX + 80);
+    return { pos, claim: { x: width / 2, y: Math.max(height * 0.14, 70) }, band: { x: width / 2, y: top + ((rows - 1) * gapY) / 2, w: bandW, h: rows * gapY + 40 } };
+  }
+
   function buildElements() {
     const papers = visiblePapers();
     const box = $('#graph').getBoundingClientRect();
-    const pos = computePositions(papers, Math.max(box.width, 600), Math.max(box.height, 450));
+    const W = Math.max(box.width, 600), H = Math.max(box.height, 450);
+    const layout = state.selectedClaim ? claimLayout(papers, W, H) : null;
+    const pos = layout ? layout.pos : computePositions(papers, W, H);
     const visible = new Set(papers.map(p => p.id));
     const els = [];
     const claimType = new Map();
@@ -390,6 +411,21 @@
       if (!state.show[r.type]) continue;
       if (r.status === 'new' && !state.show.pending) continue;
       els.push({ group: 'edges', data: { id: r.id, source: r.from, target: r.to, label: r.status === 'new' ? 'new' : '' }, classes: `${r.type} ${r.status === 'new' ? 'pending' : ''}` });
+    }
+
+    if (layout) {
+      const c = state.claims.get(state.selectedClaim);
+      const text = String(c?.text || '');
+      els.push({ group: 'nodes', data: { id: '__band', label: 'Layer 0 · 논문', w: layout.band.w, h: layout.band.h },
+        position: { x: layout.band.x, y: layout.band.y }, classes: 'band' });
+      els.push({ group: 'nodes', data: { id: state.selectedClaim, label: text.length > 150 ? text.slice(0, 148) + '…' : text },
+        position: layout.claim, classes: 'claim-node' });
+      for (const r of claimLinks(state.selectedClaim)) {
+        if (!visible.has(r.from)) continue;
+        if (r.status === 'new' && !state.show.pending) continue;
+        els.push({ group: 'edges', data: { id: `cl:${r.id}`, source: r.from, target: state.selectedClaim, label: r.type },
+          classes: `to-claim t-${r.type} ${r.status === 'new' ? 'pending' : ''}` });
+      }
     }
 
     if (state.show['same-author']) {
@@ -451,6 +487,22 @@
       { selector: 'edge.conflicts', style: { 'line-color': css('--conflicts'), 'line-style': 'dashed' } },
       { selector: 'edge.same-author', style: { 'line-color': css('--author'), width: 0.8, opacity: 0.6 } },
       { selector: 'edge.pending', style: { opacity: 0.55 } },
+      { selector: 'node.band', style: {
+        shape: 'round-rectangle', width: 'data(w)', height: 'data(h)', 'background-color': css('--accent'), 'background-opacity': 0.05,
+        'border-width': 1, 'border-color': css('--accent'), 'border-opacity': 0.18, label: 'data(label)',
+        'font-size': 10, color: quiet, 'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': 6,
+        events: 'no', 'z-index': 0 } },
+      { selector: 'node.claim-node', style: {
+        shape: 'round-rectangle', width: 420, height: 96, 'background-color': surface, 'border-width': 2,
+        'border-color': css('--accent'), label: 'data(label)', 'font-size': 13, 'font-weight': 600, color: ink,
+        'text-wrap': 'wrap', 'text-max-width': 390, 'text-valign': 'center', 'text-halign': 'center',
+        'underlay-color': css('--accent'), 'underlay-opacity': 0.06, 'underlay-padding': 8, 'underlay-shape': 'round-rectangle', 'z-index': 10 } },
+      { selector: 'edge.to-claim', style: {
+        width: 2, 'curve-style': 'straight', 'target-arrow-shape': 'triangle', 'arrow-scale': 0.9,
+        'font-size': 10, 'font-weight': 600, 'text-background-color': surface, 'text-background-opacity': 0.9, 'text-background-padding': 2,
+        'text-rotation': 'none', 'source-distance-from-node': 4, 'target-distance-from-node': 6 } },
+      ...CLAIM_TYPES.map(t => ({ selector: `edge.t-${t}`, style: { 'line-color': css(`--${t}`), 'target-arrow-color': css(`--${t}`), color: css(`--${t}`) } })),
+      { selector: 'edge.to-claim.pending', style: { 'line-style': 'dashed', opacity: 0.6 } },
       { selector: ':selected', style: { 'overlay-color': css('--accent'), 'overlay-opacity': 0.15, 'overlay-padding': 6 } },
     ];
   }
@@ -469,6 +521,7 @@
     });
     cy.on('tap', 'node.paper', e => showPaper(e.target.id()));
     cy.on('tap', 'node.author', e => showAuthor(e.target.id()));
+    cy.on('tap', 'node.claim-node', e => showClaim(e.target.id()));
     cy.on('tap', e => { if (e.target === cy) (state.selectedClaim ? showClaim(state.selectedClaim) : showEmptyDetail()); });
     renderLegend();
   }
