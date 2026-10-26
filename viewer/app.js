@@ -76,6 +76,101 @@
     return x;
   }
 
+  // ---------- KO / EN ----------
+  // Interface text is rewritten on screen (i18n.js). Data text (class "dt") uses stored translations
+  // (demo data) or, for your own data, the summary model in this browser; memos (class "raw") stay as written.
+  const I18N = { lang: 'ko', orig: new WeakMap(), set: new WeakMap(), attrs: new WeakMap(), dataOrig: new WeakMap() };
+  try { I18N.lang = localStorage.getItem('research-dump.lang') === 'en' ? 'en' : 'ko'; } catch { /* ignore */ }
+  const trCache = (() => { try { return JSON.parse(localStorage.getItem('research-dump.tr.en') || '{}'); } catch { return {}; } })();
+  const dataText = text => state.dataDict?.[text] || trCache[text] || text;
+  const SKIP = 'textarea, input, select, script, style, .raw';
+
+  function translateText(node) {
+    if (node.parentElement?.closest(SKIP) || node.parentElement?.closest('.dt')) return;
+    const cur = node.nodeValue;
+    if (I18N.set.get(node) !== cur) I18N.orig.set(node, cur);  // the page changed it: this is the new original
+    const orig = I18N.orig.get(node);
+    const next = I18N.lang === 'en' ? RDI18N.ui(orig) : orig;
+    if (next !== cur) { I18N.set.set(node, next); node.nodeValue = next; } else I18N.set.set(node, cur);
+  }
+
+  function translateAttrs(el) {
+    for (const a of ['placeholder', 'title']) {
+      if (!el.hasAttribute?.(a)) continue;
+      let o = I18N.attrs.get(el) || {};
+      const cur = el.getAttribute(a);
+      if (o[`set_${a}`] !== cur) o[a] = cur;
+      const next = I18N.lang === 'en' ? RDI18N.ui(o[a]) : o[a];
+      o[`set_${a}`] = next; I18N.attrs.set(el, o);
+      if (next !== cur) el.setAttribute(a, next);
+    }
+  }
+
+  const pending = new Set();
+  let trTimer = null, trAsked = false;
+  function translateData(el) {
+    const cur = el.textContent;
+    let orig = I18N.dataOrig.get(el);
+    if (!orig || (orig.shown !== cur)) orig = { text: cur };
+    const text = orig.text;
+    const next = I18N.lang === 'en' ? dataText(text) : text;
+    if (I18N.lang === 'en' && next === text && RDI18N.HANGUL.test(text)) pending.add(text);
+    orig.shown = next; I18N.dataOrig.set(el, orig);
+    if (next !== cur) el.textContent = next;
+  }
+
+  function translateTree(root) {
+    if (root.nodeType === 3) { translateText(root); return; }
+    if (root.nodeType !== 1) return;
+    if (root.matches?.('.dt')) { translateData(root); return; }
+    translateAttrs(root);
+    for (const el of root.querySelectorAll('[placeholder], [title]')) translateAttrs(el);
+    for (const el of root.querySelectorAll('.dt')) translateData(el);
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (RDI18N.HANGUL.test(n.nodeValue) || I18N.orig.has(n)) translateText(n);
+    if (pending.size) { clearTimeout(trTimer); trTimer = setTimeout(translatePending, 400); }
+  }
+
+  // your own data in EN: translate with the summary model (your key, this browser only), cached here
+  async function translatePending() {
+    const cfg = state.config?.llm?.summary;
+    if (I18N.lang !== 'en' || state.source !== 'github' || !cfg || !pending.size) { pending.clear(); return; }
+    if (!llmKeys.get(cfg.key_name) && trAsked) { pending.clear(); return; }
+    trAsked = true;
+    const texts = [...pending].slice(0, 40);
+    texts.forEach(t => pending.delete(t));
+    try {
+      const reply = await callLLM(cfg, 'Translate each Korean text into natural academic English. Keep technical terms, numbers and paper names. Reply with JSON only: {"t": ["...", ...]} in the same order.',
+        JSON.stringify({ texts }));
+      const out = parseJsonReply(reply.text).t || [];
+      texts.forEach((t, i) => { if (out[i]) trCache[t] = String(out[i]); });
+      try { localStorage.setItem('research-dump.tr.en', JSON.stringify(trCache)); } catch { /* full: keep in memory */ }
+      translateTree(document.body);
+      if (state.selectedClaim && state.tab === 'home') renderGraph();
+    } catch (err) {
+      pending.clear();
+      toast(`${I18N.lang === 'en' ? 'Could not translate' : '번역하지 못했어요'}: ${err.message}`, true);
+    }
+    if (pending.size) setTimeout(translatePending, 200);
+  }
+
+  new MutationObserver(muts => {
+    for (const m of muts) {
+      if (m.type === 'characterData') translateText(m.target);
+      else for (const n of m.addedNodes) translateTree(n);
+    }
+  }).observe(document.body, { childList: true, subtree: true, characterData: true });
+
+  function setLang(lang) {
+    I18N.lang = lang;
+    try { localStorage.setItem('research-dump.lang', lang); } catch { /* ignore */ }
+    document.documentElement.lang = lang;
+    for (const b of document.querySelectorAll('#lang button')) b.classList.toggle('on', b.dataset.lang === lang);
+    translateTree(document.body);
+    if (cy && state.tab === 'home') renderGraph();
+  }
+  $('#lang').onclick = e => { const b = e.target.closest('button[data-lang]'); if (b) setLang(b.dataset.lang); };
+
   // ---------- storage (best effort) ----------
   const store = {
     get() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch { return null; } },
@@ -110,8 +205,20 @@
     return out;
   }
 
+  // demo data: sample-data/showcase.json (exported with 데모로 내보내기) when present, else the reading list
   async function loadDemo() {
-    const [bundle, config] = await Promise.all([demoJSON('bundle.json'), demoJSON('config.json')]);
+    const config = await demoJSON('config.json');
+    try {
+      const sc = await demoJSON('showcase.json');
+      return { config, papers: sc.papers || [], authors: sc.authors || [], claims: sc.claims || [], relations: sc.relations || [],
+        requests: [], excluded: [], keywords: {}, translations: sc.translations || {}, showcase: true };
+    } catch { /* no showcase yet */ }
+    return loadReadingList(config);
+  }
+
+  async function loadReadingList(config) {
+    config = config || await demoJSON('config.json');
+    const bundle = await demoJSON('bundle.json');
     const data = fromEntries(Object.entries(bundle.entries).map(([k, e]) => [k, e.data]));
     return { config, ...data, excluded: bundle.excluded || [], keywords: bundle.keywords || {} };
   }
@@ -119,13 +226,13 @@
   const gh = {
     conn: null,
     headers() { return { Authorization: `Bearer ${this.conn.token}`, 'X-GitHub-Api-Version': '2022-11-28' }; },
-    url(path) { return `https://api.github.com/repos/${this.conn.repo}${path}`; },
-    async call(method, path, body) {
-      const r = await fetch(this.url(path), {
+    url(path, repo) { return `https://api.github.com/repos/${repo || this.conn.repo}${path}`; },
+    async call(method, path, body, repo) {
+      const r = await fetch(this.url(path, repo), {
         method, headers: { ...this.headers(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
         body: body ? JSON.stringify(body) : undefined, cache: 'no-store',
       });
-      if (r.status === 401 || r.status === 403) throw new Error('토큰 권한을 확인해주세요 (Contents: Read and write).');
+      if (r.status === 401 || r.status === 403) { const e = new Error('토큰 권한을 확인해주세요 (Contents: Read and write).'); e.status = r.status; throw e; }
       if (r.status === 404) { const e = new Error('저장소나 branch를 찾을 수 없어요.'); e.status = 404; throw e; }
       if (!r.ok) { const e = new Error(`GitHub 응답 ${r.status}`); e.status = r.status; throw e; }
       return r.json();
@@ -137,18 +244,18 @@
       return r.json();
     },
     // One commit for any number of files (Git Data API). Retries once if the branch moved.
-    async commit(files, message) {
-      const branch = encodeURIComponent(this.conn.branch);
+    async commit(files, message, target = {}) {
+      const branch = encodeURIComponent(target.branch || this.conn.branch), repo = target.repo;
       for (let attempt = 0; attempt < 2; attempt++) {
-        const ref = await this.call('GET', `/git/ref/heads/${branch}`);
-        const head = await this.call('GET', `/git/commits/${ref.object.sha}`);
+        const ref = await this.call('GET', `/git/ref/heads/${branch}`, null, repo);
+        const head = await this.call('GET', `/git/commits/${ref.object.sha}`, null, repo);
         const tree = await this.call('POST', '/git/trees', {
           base_tree: head.tree.sha,
           tree: files.map(f => ({ path: f.path, mode: '100644', type: 'blob', content: JSON.stringify(f.data, null, 2) + '\n' })),
-        });
-        const c = await this.call('POST', '/git/commits', { message, tree: tree.sha, parents: [ref.object.sha] });
+        }, repo);
+        const c = await this.call('POST', '/git/commits', { message, tree: tree.sha, parents: [ref.object.sha] }, repo);
         try {
-          await this.call('PATCH', `/git/refs/heads/${branch}`, { sha: c.sha });
+          await this.call('PATCH', `/git/refs/heads/${branch}`, { sha: c.sha }, repo);
           return;
         } catch (e) {
           if (e.status !== 422 || attempt === 1) throw e;
@@ -227,6 +334,8 @@
     state.requests = new Map((data.requests || []).filter(r => r.status !== 'dropped').map(r => [r.id, r]));
     state.relations = data.relations;
     state.excluded = data.excluded || [];
+    state.dataDict = data.translations?.en || {};
+    if (data.showcase) state.only.all = true;
     state.refFiles = data.refFiles || new Set();
     state.refs = new Map();
     state.keywords = data.keywords || {};
@@ -415,8 +524,8 @@
 
     if (layout) {
       const c = state.claims.get(state.selectedClaim);
-      const text = String(c?.text || '');
-      els.push({ group: 'nodes', data: { id: '__band', label: 'Layer 0 · 논문', w: layout.band.w, h: layout.band.h },
+      const text = I18N.lang === 'en' ? dataText(String(c?.text || '')) : String(c?.text || '');
+      els.push({ group: 'nodes', data: { id: '__band', label: I18N.lang === 'en' ? 'Layer 0 · Papers' : 'Layer 0 · 논문', w: layout.band.w, h: layout.band.h },
         position: { x: layout.band.x, y: layout.band.y }, classes: 'band' });
       els.push({ group: 'nodes', data: { id: state.selectedClaim, label: text.length > 150 ? text.slice(0, 148) + '…' : text },
         position: layout.claim, classes: 'claim-node' });
@@ -537,7 +646,7 @@
 
   // ---------- home sidebar ----------
   function claimLabel(c) {
-    return `${esc(c.text)}<span class="status">${c.origin === 'ai' ? 'AI 추천 · ' : ''}${esc(CLAIM_STATUS_KO[c.status] || c.status)} · v${esc(c.version)} · ${claimLinks(c.id).length}편</span>`;
+    return `<span class="dt">${esc(c.text)}</span><span class="status">${c.origin === 'ai' ? 'AI 추천 · ' : ''}${esc(CLAIM_STATUS_KO[c.status] || c.status)} · v${esc(c.version)} · ${claimLinks(c.id).length}편</span>`;
   }
 
   function renderSidebar() {
@@ -606,7 +715,7 @@
   }
 
   // ---------- shared pieces ----------
-  const field = (label, text) => `<div class="field"><b>${label}</b>${text ? `<p>${esc(text)}</p>` : '<p class="empty-text">아직 없음</p>'}</div>`;
+  const field = (label, text) => `<div class="field"><b>${label}</b>${text ? `<p class="dt">${esc(text)}</p>` : '<p class="empty-text">아직 없음</p>'}</div>`;
   const nameOf = id => state.papers.get(id)?.title || state.claims.get(id)?.text || id;
   const options = (values, selected, labels = {}) => values.map(v => `<option value="${esc(v)}" ${v === selected ? 'selected' : ''}>${esc(labels[v] || v)}</option>`).join('');
 
@@ -647,9 +756,10 @@
   function elapsed(iso) {
     const sec = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000));
     if (!Number.isFinite(sec)) return '';
-    if (sec < 60) return `${sec}초`;
-    if (sec < 3600) return `${Math.floor(sec / 60)}분 ${sec % 60}초`;
-    return `${Math.floor(sec / 3600)}시간 ${Math.floor((sec % 3600) / 60)}분`;
+    const en = I18N.lang === 'en';
+    if (sec < 60) return en ? `${sec}s` : `${sec}초`;
+    if (sec < 3600) return en ? `${Math.floor(sec / 60)}m ${sec % 60}s` : `${Math.floor(sec / 60)}분 ${sec % 60}초`;
+    return en ? `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m` : `${Math.floor(sec / 3600)}시간 ${Math.floor((sec % 3600) / 60)}분`;
   }
   setInterval(() => { for (const el of document.querySelectorAll('.req-elapsed')) el.textContent = elapsed(el.dataset.t); }, 1000);
 
@@ -787,7 +897,7 @@
     return `<div class="rel ${esc(r.type)}">
       <div><span class="type">${esc(r.type)}</span> <span class="badge ${esc(r.status)}">${esc(r.status)}</span></div>
       <div>${target}</div>
-      <p class="meta">${esc(r.reason)}${r.model ? ` · ${esc(r.model)}` : ''}</p>
+      <p class="meta"><span class="dt">${esc(r.reason)}</span>${r.model ? ` · ${esc(r.model)}` : ''}</p>
       ${actions}
     </div>`;
   }
@@ -900,7 +1010,7 @@
     const busyKind = k => [...state.requests.values()].some(r => r.claim === id && r.kind === k && r.status !== 'failed');
     const busyClaim = busyKind('claim_papers'), busyWeb = busyKind('claim_web');
     box.innerHTML = `
-      <h3>${esc(c.text)}</h3>
+      <h3 class="dt">${esc(c.text)}</h3>
       <div class="meta">${c.origin === 'ai' ? `<span class="chip ai">AI 추천</span> ` : ''}${esc(CLAIM_STATUS_KO[c.status] || c.status)} · v${esc(c.version)}${c.created_at ? ` · ${esc(c.created_at)}` : ''}
         <button type="button" class="mini" data-action="claim-edit" data-id="${esc(id)}">수정</button></div>
       ${c.origin === 'ai' && c.status === 'candidate' ? `<div class="actions"><button type="button" data-action="claim-status" data-status="active" data-id="${esc(id)}">진행할래요</button><button type="button" class="quiet" data-action="claim-status" data-status="retired" data-id="${esc(id)}">접기</button></div>` : ''}
@@ -908,7 +1018,7 @@
       <h4>메모</h4>
       ${memoForm('claim', id, c.memo)}
       <h4>근거</h4>
-      ${c.basis ? `<p class="basis">${esc(c.basis)}</p>` : '<p class="hint">아직 없음. "수정"에서 적을 수 있어요.</p>'}
+      ${c.basis ? `<p class="basis dt">${esc(c.basis)}</p>` : '<p class="hint">아직 없음. "수정"에서 적을 수 있어요.</p>'}
       ${c.model ? `<p class="meta">추천 모델: ${esc(c.model)}</p>` : ''}
       <h4>관련 논문 <span class="count">${links.length}편</span></h4>
       <div class="actions wrap">
@@ -968,7 +1078,7 @@
         <div><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a>
           ${x.seminal ? '<span class="chip">대표 논문</span>' : ''}${x.top_venue ? '<span class="chip">좋은 학회</span>' : ''}${(x.top_orgs || []).map(o => `<span class="chip">${esc(o)}</span>`).join('')}</div>
         <p class="meta">${esc(meta)}</p>
-        ${x.reason ? `<p class="meta">${esc(x.reason)}</p>` : ''}
+        ${x.reason ? `<p class="meta dt">${esc(x.reason)}</p>` : ''}
         <div class="actions">${inRepo ? '<span class="hint">저장소에 있음</span>'
           : adding.has(x.id) ? '<span class="hint">추가 중...</span>'
           : `<button type="button" class="mini" data-action="web-add" data-claim="${esc(id)}" data-id="${esc(x.id)}">추가하기</button>`}</div>
@@ -979,6 +1089,94 @@
       <div class="chipset">${Object.entries(WEB_SORTS).map(([k, v]) => `<button type="button" class="mini ${sort === k ? 'on' : ''}" data-action="web-sort" data-sort="${k}" data-id="${esc(id)}">${v} 순</button>`).join('')}</div>
       ${items.map(row).join('') || '<p class="hint">관련 있는 논문을 찾지 못했어요.</p>'}
       ${ws.queries?.length ? `<p class="meta">검색어: ${esc(ws.queries.join(' / '))}</p>` : ''}`;
+  }
+
+  // ---------- 데모로 내보내기: chosen topics + their papers and relations -> public demo data ----------
+  // Where the web page itself is published: <owner>.github.io/<repo>/ -> owner/repo (the public code repository)
+  const publicRepo = () => {
+    const owner = location.hostname.endsWith('.github.io') ? location.hostname.split('.')[0] : 'hanslelee';
+    const repo = location.pathname.split('/').filter(Boolean)[0] || 'research-dump';
+    return `${owner}/${repo}`;
+  };
+
+  function openExport() {
+    let dlg = $('#export-dialog');
+    if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'export-dialog'; document.body.appendChild(dlg); }
+    const claims = [...state.claims.values()].filter(c => c.status !== 'retired');
+    dlg.innerHTML = `<form method="dialog" id="export-form">
+      <h2>데모 데이터로 내보내기</h2>
+      <p class="hint">고른 연구 주제와 연결된 논문, 관계가 공개 저장소(research-dump)의 데모 데이터가 돼요. 메모는 넣지 않아요.</p>
+      <div class="toggles export-list">${claims.map(c => `<label><input type="checkbox" name="claim" value="${esc(c.id)}" ${c.id === state.topics.selected ? 'checked' : ''}><span class="dt">${esc(c.text)}</span></label>`).join('')}</div>
+      <label class="toggles"><span><input type="checkbox" name="exp"> 실험 포함 (공개돼도 되는 경우만)</span></label>
+      <p class="hint" id="export-status"></p>
+      <div class="dialog-actions"><button type="button" class="quiet" id="export-cancel">취소</button><button type="submit">내보내기</button></div>
+    </form>`;
+    $('#export-cancel').onclick = () => dlg.close();
+    $('#export-form').onsubmit = async e => {
+      e.preventDefault();
+      const ids = [...e.target.querySelectorAll('input[name=claim]:checked')].map(i => i.value);
+      if (!ids.length) return;
+      const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true;
+      try { await exportDemo(ids, e.target.exp.checked, msg => { $('#export-status').textContent = msg; }); dlg.close(); }
+      catch (err) { toast(`${I18N.lang === 'en' ? 'Export failed' : '내보내지 못했어요'}: ${err.message}`, true); }
+      finally { btn.disabled = false; }
+    };
+    dlg.showModal();
+  }
+
+  async function exportDemo(claimIds, withExperiments, status) {
+    const strip = o => { const x = structuredClone(o); delete x.memo; return x; };
+    const claims = claimIds.map(id => {
+      const c = strip(state.claims.get(id));
+      if (!withExperiments) c.experiments = [];
+      delete c.history; c.history = [];
+      return c;
+    });
+    const cset = new Set(claimIds);
+    const rels01 = state.relations.filter(r => r.layer === '0-1' && cset.has(r.to) && r.status !== 'rejected' && r.type !== 'unrelated');
+    const pids = new Set(rels01.map(r => r.from).filter(id => state.papers.has(id)));
+    const rels0 = state.relations.filter(r => r.layer === '0' && pids.has(r.from) && pids.has(r.to) && r.status !== 'rejected');
+    const papers = [...pids].map(id => {
+      const p = strip(state.papers.get(id));
+      p.marks = { liked: !!marksOf(p).liked, bookmarked: false, hidden: false };
+      delete p.status;
+      return p;
+    });
+    const authorIds = new Set(papers.flatMap(p => p.authors || []));
+    const authors = [...state.authors.values()].filter(a => authorIds.has(a.id));
+    const relations = [...rels01, ...rels0].map(r => structuredClone(r));
+
+    // English for every Korean text shown on the page, so the demo needs no key
+    const texts = new Set();
+    const add = t => { if (t && RDI18N.HANGUL.test(t)) texts.add(String(t)); };
+    for (const c of claims) { add(c.text); add(c.basis); for (const x of c.experiments || []) { add(x.title); add(x.setup); add(x.result); } for (const w of c.web_suggestions?.items || []) add(w.reason); }
+    for (const p of papers) { add(p.summary?.claim); add(p.summary?.condition); add(p.summary?.gap); }
+    for (const r of relations) add(r.reason);
+    const cfg = state.config?.llm?.summary;
+    const en = {};
+    const list = [...texts];
+    for (let i = 0; i < list.length; i += 25) {
+      status(`${I18N.lang === 'en' ? 'Translating to English' : '영어 번역 중'}... ${Math.min(i + 25, list.length)}/${list.length}`);
+      const chunk = list.slice(i, i + 25);
+      const reply = await callLLM(cfg, 'Translate each Korean text into natural academic English. Keep technical terms, numbers and paper names. Reply with JSON only: {"t": ["...", ...]} in the same order.',
+        JSON.stringify({ texts: chunk }));
+      const out = parseJsonReply(reply.text).t || [];
+      chunk.forEach((t, j) => { if (out[j]) en[t] = String(out[j]); });
+    }
+    const showcase = { created_at: today(), source: 'exported from the research-dump web page', papers, authors, claims, relations, translations: { en } };
+    status(I18N.lang === 'en' ? 'Exporting...' : '내보내는 중...');
+    const repo = publicRepo();
+    try {
+      await gh.commit([{ path: 'sample-data/showcase.json', data: showcase }], `Demo data: ${claims.length} topic(s), ${papers.length} papers`, { repo, branch: 'main' });
+      toast(I18N.lang === 'en' ? `Exported to ${repo}. The demo updates in about a minute.` : `${repo}에 내보냈어요. 1분쯤 뒤 데모 데이터에 반영돼요.`);
+    } catch (err) {
+      // the token may not cover the public repository: hand over the file instead
+      const blob = new Blob([JSON.stringify(showcase, null, 2) + '\n'], { type: 'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'showcase.json'; a.click();
+      toast(I18N.lang === 'en'
+        ? `No access to ${repo} with this token (${err.message}). Downloaded showcase.json: upload it to ${repo}/sample-data/.`
+        : `이 토큰으로는 ${repo}에 쓸 수 없어서(${err.message}) showcase.json 파일로 받았어요. ${repo}의 sample-data/에 올려주세요.`, true);
+    }
   }
 
   function newClaimForm() {
@@ -995,16 +1193,17 @@
       <div class="row">
         <div class="chipset">${chip('status', '', '전체', all.length)}${CLAIM_STATUS.map(s => chip('status', s, CLAIM_STATUS_KO[s], count(c => c.status === s))).join('')}</div>
         <div class="chipset">${chip('origin', '', '모두')}${chip('origin', 'manual', '직접', count(c => c.origin !== 'ai'))}${chip('origin', 'ai', 'AI 추천', count(c => c.origin === 'ai'))}</div>
-        <button type="button" data-action="claim-new" class="push-right">+ 새 연구 주제</button>
+        ${state.source === 'github' ? '<button type="button" data-action="export-demo" class="push-right quiet">데모로 내보내기</button>' : ''}
+        <button type="button" data-action="claim-new" ${state.source === 'github' ? '' : 'class="push-right"'}>+ 새 연구 주제</button>
       </div>`;
     const rows = all.filter(c => (!t.status || c.status === t.status) && (!t.origin || (t.origin === 'ai' ? c.origin === 'ai' : c.origin !== 'ai')))
       .sort((a, b) => (CLAIM_STATUS.indexOf(a.status) - CLAIM_STATUS.indexOf(b.status)) || String(b.created_at || '').localeCompare(String(a.created_at || '')));
     $('#topic-list').innerHTML = rows.map(c => `
       <div class="row-card ${t.selected === c.id ? 'active' : ''}" data-claim-row="${esc(c.id)}">
-        <div class="row-title">${c.origin === 'ai' ? '<span class="chip ai">AI 추천</span> ' : ''}${esc(c.text)}</div>
+        <div class="row-title">${c.origin === 'ai' ? '<span class="chip ai">AI 추천</span> ' : ''}<span class="dt">${esc(c.text)}</span></div>
         <div class="meta">${esc(CLAIM_STATUS_KO[c.status] || c.status)} · v${esc(c.version)} · 연결 논문 ${claimLinks(c.id).length}편 · 실험 ${(c.experiments || []).length}개${c.created_at ? ` · ${esc(c.created_at)}` : ''}</div>
-        ${c.basis ? `<div class="row-text clamp2">${esc(c.basis)}</div>` : ''}
-        ${c.memo ? `<div class="memo-preview">${esc(c.memo)}</div>` : ''}
+        ${c.basis ? `<div class="row-text clamp2 dt">${esc(c.basis)}</div>` : ''}
+        ${c.memo ? `<div class="memo-preview raw">${esc(c.memo)}</div>` : ''}
       </div>`).join('') || '<p class="hint">연구 주제가 없어요. "+ 새 연구 주제"로 만들거나, 논문에서 "연구 주제 추천"을 눌러보세요.</p>';
     if (t.selected && state.claims.has(t.selected)) showClaim(t.selected);
   }
@@ -1123,8 +1322,8 @@
       </div>
       <div class="meta">${esc(metaLine(p))}${enteredAt(p) ? ` · 들어온 날 ${esc(enteredAt(p).slice(5).replace('-', '.'))}` : ''}</div>
       <div class="chips">${tagList(p).map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>
-      ${s.claim ? `<div class="row-text">${esc(s.claim)}</div>` : '<div class="row-text empty-text">요약 없음</div>'}
-      ${p.memo && !open ? `<div class="memo-preview">${esc(p.memo)}</div>` : ''}
+      ${s.claim ? `<div class="row-text dt">${esc(s.claim)}</div>` : '<div class="row-text empty-text">요약 없음</div>'}
+      ${p.memo && !open ? `<div class="memo-preview raw">${esc(p.memo)}</div>` : ''}
       ${open ? `<div class="row-more">
         ${field('조건', s.condition)}${field('빈 곳', s.gap)}
         <div class="actions wrap">${markButtons(p)}</div>
@@ -1431,6 +1630,7 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     else if (action === 'rel-reject') setRelationStatus(id, 'rejected');
     else if (action === 'claim-edit') showClaim(id, 'edit');
     else if (action === 'claim-new') newClaimForm();
+    else if (action === 'export-demo') openExport();
     else if (action === 'claim-cancel') id ? showClaim(id) : (state.tab === 'topics' ? ($('#topic-detail').innerHTML = '') : showEmptyDetail());
     else if (action === 'claim-status') {
       const c = { ...structuredClone(state.claims.get(id)), status: b.dataset.status };
@@ -1530,7 +1730,7 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     if (state.source !== 'github') return;
     const btn = $('#btn-import'); btn.disabled = true;
     try {
-      const demo = await loadDemo();
+      const demo = await loadReadingList();
       const items = [
         ...demo.authors.filter(a => !state.authors.has(a.id)).map(data => ({ dir: 'authors', data })),
         ...demo.papers.filter(p => !state.papers.has(p.id)).map(p => ({ dir: 'papers', data: { ...p,
@@ -1598,5 +1798,6 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
 
   const startTab = ['papers', 'topics'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'home';
   setTab(startTab, { push: false });
+  setLang(I18N.lang);
   useSource(store.get() ? 'github' : 'demo');
 })();

@@ -266,3 +266,10 @@ details.refs-box { margin: 12px 0; border-top: 1px solid var(--line); padding-to
 details.refs-box > summary { cursor: pointer; font-size: 12px; color: var(--quiet); text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
 .ref-row { border-bottom: 1px solid var(--line); padding: 6px 0; font-size: 13px; }
 .ref-row .actions { margin-top: 4px; }
+
+.lang { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; flex-shrink: 0; }
+.lang button { border: 0; border-radius: 0; padding: 3px 9px; font-size: 12px; font-weight: 600; color: var(--quiet); background: var(--surface); }
+.lang button.on { background: var(--accent); color: #fff; }
+.export-list { max-height: 50vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin: 8px 0; }
+.export-list label { align-items: flex-start; }
+#export-dialog { width: min(560px, 92vw); }
