@@ -543,3 +543,22 @@ class RequestRunRobustnessTest(Base):
         with mock.patch.dict(os.environ, {"CHECKPOINT": "1"}), mock.patch.object(checkpoint.time, "sleep", lambda *_: None):
             self.assertFalse(checkpoint.save(b, "conflict", log=lambda *_: None))
         self.assertFalse((b / ".git" / "rebase-merge").exists() or (b / ".git" / "rebase-apply").exists())
+
+
+class ComparePoolTest(Base):
+    def test_papers_linked_to_a_topic_count_like_liked_ones(self):
+        self.put("papers", paper("arxiv:new", "Builds on it", ["sycophancy"], entered="2026-10-22"))
+        self.put("papers", paper("arxiv:topic", "Linked to topic", ["sycophancy"]))
+        self.put("papers", paper("arxiv:old", "Retired topic only", ["sycophancy"]))
+        self.put("claims", {"id": "claim:a", "text": "t", "status": "candidate", "version": 1})
+        self.put("claims", {"id": "claim:r", "text": "r", "status": "retired", "version": 1})
+        self.put("relations", {"id": "rel:a", "from": "arxiv:topic", "to": "claim:a", "layer": "0-1", "type": "support", "reason": "x", "status": "new"})
+        self.put("relations", {"id": "rel:r", "from": "arxiv:old", "to": "claim:r", "layer": "0-1", "type": "support", "reason": "x", "status": "approved"})
+        asked = []
+        chat = lambda a, s, u, **kw: (asked.append((json.loads(u)["target"]["id"], sorted(c["id"] for c in json.loads(u)["candidates"]))), fake_compare(a, s, u))[1]
+        compare.run(self.d, "2026-10-24", log=lambda *_: None, chat=chat)
+        targets = {t for t, _ in asked}
+        self.assertIn("arxiv:topic", targets)       # newly key -> compared with all
+        self.assertNotIn("arxiv:old", targets)      # only linked to a retired topic
+        new_cands = [c for t, c in asked if t == "arxiv:new"]
+        self.assertEqual(new_cands, [["arxiv:topic"]])

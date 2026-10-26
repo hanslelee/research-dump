@@ -3,9 +3,9 @@
     python pipeline/compare.py --data ../research-dump-data                 # weekly run
     python pipeline/compare.py --data ../research-dump-data --paper <id>    # 관계 찾기 for one paper
 
-Weekly run (after the summary agent):
-  - papers that entered in the last 7 days  vs  papers you liked
-  - papers you liked since the last run     vs  all papers
+Weekly run (after the summary agent). Key papers = papers you liked + papers linked to a research topic.
+  - papers that entered in the last 7 days  vs  key papers
+  - papers that became key since the last run (liked or newly linked)  vs  all papers
 관계 찾기 (one paper): that paper vs every other paper.
 In every case only the 20 closest papers by embedding (embed.py) are sent to the model.
 Without an embedding model: weekly pairs must share a topic tag, 관계 찾기 compares with all papers.
@@ -141,7 +141,12 @@ def run(data_dir: Path, today: str, log=print, chat=None, embed_fn=None):
     done_new, done_liked, checked = set(st["done_new"]), set(st["done_liked"]), set(st["checked"])
     known = existing_pairs(relations) | checked
     week_ago = (dt.date.fromisoformat(today) - dt.timedelta(days=7)).isoformat()
-    liked = [p for p in papers.values() if is_liked(p)]
+    # key papers = liked + linked to a research topic (any relation that is not rejected, topic not retired)
+    claims = load_dir(data_dir / "claims")
+    open_claims = {cid for cid, c in claims.items() if c.get("status") != "retired"}
+    linked = {r["from"] for r in relations.values() if r.get("layer") == "0-1" and r.get("to") in open_claims
+              and r.get("status") != "rejected" and r.get("type") != "unrelated"}
+    liked = [p for p in papers.values() if is_liked(p) or p["id"] in linked]
     visible = lambda p: not (p.get("marks") or {}).get("hidden")
 
     vectors = embed.ensure(data_dir, config, log, embed_fn=embed_fn, papers=papers)
