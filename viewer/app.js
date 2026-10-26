@@ -893,7 +893,9 @@
       : state.claims.has(otherId) ? `<a href="#" data-claim="${esc(otherId)}">${esc(nameOf(otherId))}</a>` : esc(nameOf(otherId));
     const actions = r.status === 'new'
       ? `<div class="actions"><button type="button" data-action="rel-approve" data-id="${esc(r.id)}">승인</button><button type="button" class="quiet" data-action="rel-reject" data-id="${esc(r.id)}">거절</button></div>`
-      : '';
+      : r.status === 'approved'
+        ? `<div class="actions"><button type="button" class="mini quiet" data-action="rel-reject" data-id="${esc(r.id)}">승인 취소 (거절로)</button></div>`
+        : `<div class="actions"><button type="button" class="mini quiet" data-action="rel-approve" data-id="${esc(r.id)}">다시 승인</button></div>`;
     return `<div class="rel ${esc(r.type)}">
       <div><span class="type">${esc(r.type)}</span> <span class="badge ${esc(r.status)}">${esc(r.status)}</span>${(() => {
         const x = auditOf(r.id); if (!x) return '';

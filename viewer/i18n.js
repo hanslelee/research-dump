@@ -46,7 +46,7 @@
     '직접 입력': 'Edit by hand', '요약 일부가 비어 있어요. 확인해주세요.': 'Part of the summary is empty. Please check.',
     '초록 보기': 'Show abstract', '아직 관계가 없어요.': 'No relations yet.', '관계 직접 추가': 'Add a relation by hand',
     '대상': 'Target', 'Layer 1 · 연구 주제 ': 'Layer 1 · Research topics', '이유': 'Reason', '추가': 'Add',
-    '승인': 'Approve', '거절': 'Reject', '저장': 'Save', '취소': 'Cancel', '신규': 'New', '기업': 'Industry',
+    '승인 취소 (거절로)': 'Undo approval (reject)', '다시 승인': 'Approve again', '승인': 'Approve', '거절': 'Reject', '저장': 'Save', '취소': 'Cancel', '신규': 'New', '기업': 'Industry',
     '외 ': '+', '명': '', ' 외': ' et al.',
     // references
     '베이스라인 · 주요 참고 논문': 'Baselines · key references', '불러오기': 'Load', '다시 불러오기': 'Reload',
