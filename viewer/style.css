@@ -273,3 +273,11 @@ details.refs-box > summary { cursor: pointer; font-size: 12px; color: var(--quie
 .export-list { max-height: 50vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin: 8px 0; }
 .export-list label { align-items: flex-start; }
 #export-dialog { width: min(560px, 92vw); }
+
+.flag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; border: 1px solid; }
+.flag.ok { color: var(--support); border-color: var(--support); }
+.flag.warn { color: var(--narrow); border-color: var(--narrow); }
+.flag.bad { color: var(--conflict); border-color: var(--conflict); }
+.audit-action { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.audit-action p { margin: 6px 0 0; font-size: 13px; }
+.audit-sum, .audit-rel { margin-top: 6px; font-size: 13px; }

@@ -10,6 +10,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pipeline"))
 import addpaper  # noqa: E402
+import audit  # noqa: E402
 import bundle  # noqa: E402
 import claimrel as claimrel_mod  # noqa: E402
 import collect  # noqa: E402
@@ -562,3 +563,56 @@ class ComparePoolTest(Base):
         self.assertNotIn("arxiv:old", targets)      # only linked to a retired topic
         new_cands = [c for t, c in asked if t == "arxiv:new"]
         self.assertEqual(new_cands, [["arxiv:topic"]])
+
+
+def fake_audit(agent, system, user, **kw):
+    assert agent["model"] == "auditor"
+    d = json.loads(user)
+    if "paper" in d:
+        bad = "Wrong" in d["paper"]["title"]
+        return {"text": json.dumps({"summary": {"verdict": "issues" if bad else "ok", "issues": ["claim overstated"] if bad else [],
+                                                 "corrected": {"claim": "fixed", "condition": "c", "gap": "g"}},
+                                    "relations": [{"id": r["id"], "verdict": "wrong_type" if bad else "supported",
+                                                   "suggested_type": "narrow" if bad else "", "evidence": "quote"} for r in d["relations"]]}),
+                "model": "x/auditor"}
+    return {"text": json.dumps({"action": "narrow", "reason": "Wrong paper narrows it", "suggested_text": "narrower"}), "model": "x/auditor"}
+
+
+class AuditTest(Base):
+    def setUp(self):
+        super().setUp()
+        cfg = {**CONFIG, "llm": {**CONFIG["llm"], "audit": {**AGENT, "model": "auditor"}}}
+        (self.d / "config.json").write_text(json.dumps(cfg))
+        self.put("claims", {"id": "claim:g", "text": "Topic", "status": "candidate", "version": 1})
+        self.put("papers", paper("arxiv:1", "Good paper"))
+        self.put("papers", paper("arxiv:2", "Wrong paper"))
+        self.put("papers", paper("s2:3", "Not linked"))
+        for i, (pid, st) in enumerate((("arxiv:1", "approved"), ("arxiv:2", "approved"), ("s2:3", "new"))):
+            self.put("relations", {"id": f"rel:{i}", "from": pid, "to": "claim:g", "layer": "0-1", "type": "support", "reason": "r", "status": st})
+        self.put("relations", {"id": "rel:x", "from": "arxiv:2", "to": "arxiv:1", "layer": "0", "type": "extends", "reason": "r", "status": "approved"})
+
+    def test_flags_only_and_action(self):
+        before = {k: v["summary"] for k, v in self.load("papers").items()}
+        rep = audit.run(self.d, "claim:g", "2026-10-26", log=lambda *_: None, chat=fake_audit, fetch=lambda aid, log: "FULL TEXT")
+        self.assertEqual(sorted(rep["papers"]), ["arxiv:1", "arxiv:2"])  # approved links only
+        self.assertEqual(rep["papers"]["arxiv:2"]["summary"]["verdict"], "issues")
+        self.assertEqual(rep["papers"]["arxiv:2"]["relations"]["rel:x"]["suggested_type"], "narrow")
+        self.assertIn("rel:x", rep["papers"]["arxiv:1"]["relations"])  # extends between linked papers is checked too
+        self.assertEqual((rep["action"]["action"], rep["status"]), ("narrow", "done"))
+        self.assertEqual({k: v["summary"] for k, v in self.load("papers").items()}, before)  # nothing changed
+        self.assertEqual(self.load("claims")["claim:g"]["audit"]["status"], "done")
+
+    def test_auditor_must_differ_from_summary_model(self):
+        cfg = {**CONFIG, "llm": {**CONFIG["llm"], "audit": dict(AGENT)}}
+        (self.d / "config.json").write_text(json.dumps(cfg))
+        with self.assertRaises(Exception):
+            audit.run(self.d, "claim:g", "2026-10-26", log=lambda *_: None, chat=fake_audit)
+
+    def test_out_of_time_resumes(self):
+        with self.assertRaises(audit.OutOfTime):
+            audit.run(self.d, "claim:g", "2026-10-26", log=lambda *_: None, chat=fake_audit, fetch=lambda a, l: "", deadline=0.0001)
+        asked = []
+        audit.run(self.d, "claim:g", "2026-10-26", log=lambda *_: None, fetch=lambda a, l: "",
+                  chat=lambda a, s, u, **kw: (asked.append(json.loads(u).get("paper", {}).get("id")), fake_audit(a, s, u))[1])
+        self.assertEqual(asked, ["arxiv:1", "arxiv:2", None])
+        self.assertEqual(self.load("claims")["claim:g"]["audit"]["papers"]["arxiv:1"]["source"], "abstract")

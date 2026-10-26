@@ -32,6 +32,7 @@ Try the demo: open `viewer/` with the sample data (no token needed).
 - [x] Schemas and sample data
 - [x] Web page tabs: 홈 (graph; default shows liked + last 4 weeks + ★), 논문 목록 (sort by entry date / citations / popularity, filters, excluded candidates), 연구 주제 (claims with memo, versions, experiments, AI candidates)
 - [x] Buttons: 좋아요 / 북마크 / 숨김, memo, 재요약, 관계 찾기, 연구 주제 추천, approve/reject relations, manual summary and relations (one commit per action through the GitHub API)
+- [x] 감사 (auditor): another model re-reads linked papers' full text and flags summary, relation and research-topic issues
 - [x] KO / EN switch (interface text; your data translated on the fly with your key; demo data carries stored English)
 - [x] 데모로 내보내기: chosen research topics with their papers and relations become the public demo (`sample-data/showcase.json`), memos never included
 - [x] `bundle.json`: one file for fast loading, changed files fetched on top

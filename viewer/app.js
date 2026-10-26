@@ -734,9 +734,9 @@
       <button type="button" data-action="request" data-kind="topics" data-id="${esc(p.id)}" ${busy('topics') ? 'disabled' : ''}>${busy('topics') ? '추천 받는 중...' : '연구 주제 추천'}</button>`;
   }
 
-  const REQUEST_LABEL = { refs: '참고문헌 불러오기', topics: '연구 주제 추천', relations: '관계 찾기', claim_papers: '저장소에서 관련 논문 찾기', claim_web: '관련 논문 웹 검색', add_paper: '논문 추가' };
+  const REQUEST_LABEL = { audit: '감사', refs: '참고문헌 불러오기', topics: '연구 주제 추천', relations: '관계 찾기', claim_papers: '저장소에서 관련 논문 찾기', claim_web: '관련 논문 웹 검색', add_paper: '논문 추가' };
   const REQUEST_DONE = { topics: '연구 주제 추천 결과가 들어왔어요.', relations: '관계 찾기 결과가 들어왔어요.',
-    refs: '참고문헌을 불러왔어요.', claim_papers: '관련 논문 찾기 결과가 들어왔어요.', claim_web: '웹 추천 논문이 들어왔어요.', add_paper: '논문을 추가하고 요약과 관계 초안까지 만들었어요.' };
+    audit: '감사 결과가 들어왔어요.', refs: '참고문헌을 불러왔어요.', claim_papers: '관련 논문 찾기 결과가 들어왔어요.', claim_web: '웹 추천 논문이 들어왔어요.', add_paper: '논문을 추가하고 요약과 관계 초안까지 만들었어요.' };
 
   function requestNoteList(filter) {
     return [...state.requests.values()].filter(filter).map(r => {
@@ -895,7 +895,11 @@
       ? `<div class="actions"><button type="button" data-action="rel-approve" data-id="${esc(r.id)}">승인</button><button type="button" class="quiet" data-action="rel-reject" data-id="${esc(r.id)}">거절</button></div>`
       : '';
     return `<div class="rel ${esc(r.type)}">
-      <div><span class="type">${esc(r.type)}</span> <span class="badge ${esc(r.status)}">${esc(r.status)}</span></div>
+      <div><span class="type">${esc(r.type)}</span> <span class="badge ${esc(r.status)}">${esc(r.status)}</span>${(() => {
+        const x = auditOf(r.id); if (!x) return '';
+        const [cls, label] = VERDICT[x.verdict] || VERDICT.supported;
+        return ` <span class="flag ${cls}" title="${esc(x.evidence || '')}">감사: ${label}${x.suggested_type ? ` → ${esc(x.suggested_type)}` : ''}</span>`;
+      })()}</div>
       <div>${target}</div>
       <p class="meta"><span class="dt">${esc(r.reason)}</span>${r.model ? ` · ${esc(r.model)}` : ''}</p>
       ${actions}
@@ -926,6 +930,7 @@
         <div class="actions"><button type="submit">저장</button><button type="button" class="quiet" data-action="paper-view" data-id="${esc(id)}">취소</button></div>
       </form>` : `
       ${pv.summary_check === 'incomplete' ? '<p class="rel duplicate">요약 일부가 비어 있어요. 확인해주세요.</p>' : ''}
+      ${(() => { const a = auditSummaryOf(id); return a ? `<p class="meta"><span class="flag ${a.verdict === 'issues' ? 'warn' : 'ok'}">감사: ${a.verdict === 'issues' ? '요약 문제' : '요약 일치'}</span>${a.source === 'full' ? '' : ' (원문 없음 · 초록만)'}${(a.issues || []).map(t => `<br><span class="dt">· ${esc(t)}</span>`).join('')}</p>` : ''; })()}
       ${field('주장', s.claim)}${field('조건', s.condition)}${field('빈 곳', s.gap)}
       <p class="meta">요약: ${esc(pv.summary_model === 'none' || !pv.summary_model ? '아직 없음 (다음 실행 때 자동 요약)' : pv.summary_model)}${pv.summary_from === 'abstract' ? ' · 초록 기준' : ''} <button type="button" class="mini" data-action="summary-edit" data-id="${esc(id)}">직접 입력</button></p>`;
     const targets = [...state.papers.values()].filter(x => x.id !== id);
@@ -1032,6 +1037,7 @@
         ${addPaperForm(id)}
       </details>
       ${webSuggestions(c, id)}
+      ${auditSection(c, id)}
       <h4>실험</h4>
       ${(c.experiments || []).map((x, i) => `<div class="rel exp">
         <div><b>${esc(x.title)}</b> <span class="meta">${esc(x.date || '')}</span>
@@ -1177,6 +1183,57 @@
         ? `No access to ${repo} with this token (${err.message}). Downloaded showcase.json: upload it to ${repo}/sample-data/.`
         : `이 토큰으로는 ${repo}에 쓸 수 없어서(${err.message}) showcase.json 파일로 받았어요. ${repo}의 sample-data/에 올려주세요.`, true);
     }
+  }
+
+  // ---------- 감사 (auditor): flags from re-reading the full text with another model ----------
+  const AUDIT_ACTION = { keep: '유지', revise: '문장 수정', narrow: '조건 좁히기', duplicate_risk: '중복 위험', retire: '접기 권장', add_experiment: '실험 추가' };
+  const VERDICT = { supported: ['ok', '원문이 뒷받침'], wrong_type: ['warn', '종류가 다를 수 있음'], unsupported: ['bad', '원문 근거 없음'] };
+
+  // the latest audit verdict for a relation / a paper's summary, from any research topic's report
+  function auditOf(relId) {
+    for (const c of state.claims.values()) for (const v of Object.values(c.audit?.papers || {})) if (v.relations?.[relId]) return v.relations[relId];
+    return null;
+  }
+  function auditSummaryOf(pid) {
+    for (const c of state.claims.values()) { const v = c.audit?.papers?.[pid]; if (v?.summary) return { ...v.summary, source: v.source }; }
+    return null;
+  }
+
+  function auditSection(c, id) {
+    const busy = [...state.requests.values()].some(r => r.claim === id && r.kind === 'audit' && r.status !== 'failed');
+    const a = c.audit;
+    const notes = requestNoteList(r => r.claim === id && r.kind === 'audit');
+    const head = `<h4>감사</h4>
+      <div class="actions wrap"><button type="button" data-action="claim-audit" data-id="${esc(id)}" ${busy ? 'disabled' : ''}>${busy ? '감사 중...' : '감사 실행'}</button></div>
+      <p class="hint">승인된 관계로 연결된 논문의 원문을 다른 모델이 다시 읽고 요약 → 관계 → 연구 주제 순으로 검사해요. 아무것도 바꾸지 않고 플래그만 표시해요.</p>${notes}`;
+    if (!a) return head;
+    const act = a.action;
+    const rows = Object.entries(a.papers || {}).map(([pid, v]) => {
+      const p = state.papers.get(pid);
+      const sum = v.summary || {};
+      const rels = Object.entries(v.relations || {}).map(([rid, x]) => {
+        const r = state.relations.find(y => y.id === rid);
+        const [cls, label] = VERDICT[x.verdict] || VERDICT.supported;
+        const what = r ? (r.layer === '0-1' ? `${r.type} → 이 연구 주제` : `${r.type} · ${shortTitle(nameOf(r.from === pid ? r.to : r.from))}`) : rid;
+        return `<div class="audit-rel"><span class="flag ${cls}">${label}</span> ${esc(what)}${x.suggested_type ? ` → <b>${esc(x.suggested_type)}</b>` : ''}
+          ${x.evidence ? `<div class="meta dt">${esc(x.evidence)}</div>` : ''}${x.note ? `<div class="meta dt">${esc(x.note)}</div>` : ''}</div>`;
+      }).join('');
+      return `<div class="rel audit-paper">
+        <div>${p ? `<a href="#" data-paper="${esc(pid)}">${esc(p.title)}</a>` : esc(pid)} <span class="chip">${v.source === 'full' ? '원문' : '원문 없음 · 초록만'}</span></div>
+        ${v.error ? `<p class="meta">검사하지 못했어요: ${esc(v.error)}</p>` : `
+        <div class="audit-sum"><span class="flag ${sum.verdict === 'issues' ? 'warn' : 'ok'}">${sum.verdict === 'issues' ? '요약 문제' : '요약 일치'}</span>
+          ${(sum.issues || []).map(t => `<div class="meta dt">· ${esc(t)}</div>`).join('')}
+          ${sum.verdict === 'issues' && sum.corrected?.claim ? `<details class="abstract"><summary>감사 모델이 쓴 요약</summary>${field('주장', sum.corrected.claim)}${field('조건', sum.corrected.condition)}${field('빈 곳', sum.corrected.gap)}</details>` : ''}
+        </div>${rels}`}
+      </div>`;
+    }).join('');
+    return `${head}
+      <p class="meta">${a.status === 'running' ? `진행 중 (${Object.keys(a.papers || {}).length}편 완료)` : `${esc(a.finished_at || a.started_at || '')}`} · ${esc(a.model || '')}</p>
+      ${act ? `<div class="audit-action"><span class="flag ${act.action === 'keep' ? 'ok' : act.action === 'retire' || act.action === 'duplicate_risk' ? 'bad' : 'warn'}">${esc(AUDIT_ACTION[act.action] || act.action)}</span>
+        <p class="dt">${esc(act.reason)}</p>
+        ${act.suggested_text ? `<div class="field"><b>제안 문장</b><p class="dt">${esc(act.suggested_text)}</p></div>` : ''}
+        ${act.suggested_experiment ? `<div class="field"><b>제안 실험</b><p class="dt">${esc(act.suggested_experiment)}</p></div>` : ''}</div>` : ''}
+      ${rows}`;
   }
 
   function newClaimForm() {
@@ -1497,6 +1554,7 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
       relations: '관계 찾기를 요청했어요. 1~3분 뒤 이 논문의 관계에 후보가 생겨요.',
       claim_papers: '관련 논문 찾기를 요청했어요. 1~3분 뒤 관련 논문에 후보가 생겨요.',
       claim_web: '웹 검색을 요청했어요. 2~4분 뒤 웹 추천 논문이 보여요.',
+      audit: '감사를 요청했어요. 논문 한 편에 1분 안팎이에요. 끝나면 이 화면에 플래그가 보여요.',
       refs: '브라우저에서 바로 불러오지 못해서 GitHub Actions로 요청했어요. 1분쯤 걸려요.',
       add_paper: '논문 추가를 요청했어요. 저장, 요약, 관계 초안까지 1~3분 걸려요.',
     }[kind]);
@@ -1612,6 +1670,7 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
       save([{ dir: 'relations', data: rel }], `Baseline: ${id} extends ${to}`).then(() => { rerenderRefs(id); if (state.tab === 'home') renderGraph(); });
     }
     else if (action === 'claim-web') makeRequest('claim_web', null, { claim: id });
+    else if (action === 'claim-audit') makeRequest('audit', null, { claim: id });
     else if (action === 'web-sort') { state.topics.webSort = b.dataset.sort; showClaim(id); }
     else if (action === 'web-add') {
       const item = state.claims.get(b.dataset.claim)?.web_suggestions?.items?.find(x => x.id === id);

@@ -37,6 +37,10 @@
         "recommend": {
           "$ref": "#/$defs/llm",
           "description": "연구 주제 추천 (long input). Falls back to llm.summary"
+        },
+        "audit": {
+          "$ref": "#/$defs/llm",
+          "description": "감사 (auditor): must be a different, stronger model than llm.summary"
         }
       }
     },

@@ -8,6 +8,7 @@ Kinds:
   claim_papers  저장소에서 관련 논문 찾기: a research topic vs every paper (claimrel.link)
   claim_web     관련 논문 웹 검색: Semantic Scholar search for a research topic -> web_suggestions on the claim
   refs          베이스라인 · 주요 참고 논문: the paper's references from Semantic Scholar -> refs/<paper>.json
+  audit         감사: re-check a research topic's papers against their full text (audit.run), flags only
 
   add_paper     추가하기: add a paper by arXiv id or title, tag and summarize it, then draft relations:
                 from a research topic screen (claim set): with that topic + 관계 찾기 against other papers
@@ -30,6 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import addpaper  # noqa: E402
+import audit  # noqa: E402
 import bundle  # noqa: E402
 import checkpoint  # noqa: E402
 import claimrel  # noqa: E402
@@ -110,6 +112,16 @@ def run(data_dir: Path, today: str, log=print, chat=None, fetch=None, find=None,
                     raise ValueError("Semantic Scholar에 이 논문의 참고문헌 정보가 없어요")
                 refs.save(data_dir, pid, rec, today)
                 msg = None  # quick lookup: no Telegram message
+            elif kind == "audit":
+                cid = req.get("claim")
+                kw = {"fetch": fetch} if fetch else {}
+                rep_ = audit.run(data_dir, cid, today, log, chat=chat, deadline=started + budget if budget else None, **kw)
+                act = rep_.get("action") or {}
+                flagged = sum(1 for v in rep_["papers"].values()
+                              if (v.get("summary") or {}).get("verdict") == "issues"
+                              or any(x.get("verdict") != "supported" for x in (v.get("relations") or {}).values()))
+                msg = (f"<b>감사</b> · {html.escape((claims.get(cid) or {}).get('text', cid or ''))}\n"
+                       f"논문 {len(rep_['papers'])}편 중 플래그 {flagged}편 · 제안: {html.escape(act.get('action', ''))}")
             elif kind == "claim_web":
                 cid = req.get("claim")
                 kw = {"search_fn": search_fn} if search_fn else {}
@@ -124,6 +136,9 @@ def run(data_dir: Path, today: str, log=print, chat=None, fetch=None, find=None,
                 msg = f"<b>연구 주제 추천</b> · {title}\n" + "\n".join(f"• {html.escape(c['text'])}" for c in claims)
             else:
                 raise ValueError(f"unknown request kind {kind!r}")
+        except audit.OutOfTime as e:  # progress is saved; the request stays pending for the next run
+            log(f"requests: audit paused ({e})")
+            break
         except Exception as e:  # keep the request so the page can show the error
             log(f"requests: {f.name} failed ({e})")
             write_json(f, {**req, "status": "failed", "error": str(e)[:300], "failed_at": today})

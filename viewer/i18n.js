@@ -121,6 +121,16 @@
     '데모 데이터로 내보내기': 'Export to demo data', '내보내기': 'Export', '실험 포함 (공개돼도 되는 경우만)': 'Include experiments (only if they may be public)',
     '고른 연구 주제와 연결된 논문, 관계가 공개 저장소(research-dump)의 데모 데이터가 돼요. 메모는 넣지 않아요.': 'The selected research topics with their linked papers and relations become the demo data in the public repository (research-dump). Memos are never included.',
     '영어 번역 중...': 'Translating to English...', '내보내는 중...': 'Exporting...',
+    // audit
+    '감사': 'Audit', '감사 실행': 'Run audit', '감사 중...': 'Auditing...', '감사: ': 'Audit: ',
+    '승인된 관계로 연결된 논문의 원문을 다른 모델이 다시 읽고 요약 → 관계 → 연구 주제 순으로 검사해요. 아무것도 바꾸지 않고 플래그만 표시해요.': 'Another model re-reads the full text of the papers linked by approved relations and checks the summary, then the relations, then the research topic. Nothing is changed: flags only.',
+    '원문이 뒷받침': 'supported by the text', '종류가 다를 수 있음': 'type may differ', '원문 근거 없음': 'not supported by the text',
+    '원문 없음 · 초록만': 'no full text · abstract only', '원문': 'full text', '요약 문제': 'summary issues', '요약 일치': 'summary matches',
+    '감사 모델이 쓴 요약': "The auditor's summary", '검사하지 못했어요: ': 'Could not check: ', '이 연구 주제': 'this research topic',
+    '유지': 'Keep', '문장 수정': 'Revise', '조건 좁히기': 'Narrow', '중복 위험': 'Duplicate risk', '접기 권장': 'Retire', '실험 추가': 'Add experiment',
+    '진행 중 (': 'In progress (', '제안 문장': 'Suggested sentence', '제안 실험': 'Suggested experiment', '편 완료)': ' papers done)',
+    '감사 결과가 들어왔어요.': 'Audit results are in.',
+    '감사를 요청했어요. 논문 한 편에 1분 안팎이에요. 끝나면 이 화면에 플래그가 보여요.': 'Audit requested. About a minute per paper; flags appear here when done.',
   };
 
   const PATTERNS = [

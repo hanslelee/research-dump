@@ -53,6 +53,12 @@
       "model": "gemini-3.8-flash",
       "min_interval": 6,
       "fallback_model": "gemini-3.5-flash-lite"
+    },
+    "audit": {
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "key_name": "GEMINI_API_KEY",
+      "model": "SET-ME",
+      "min_interval": 10
     }
   },
   "notify": {
