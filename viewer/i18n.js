@@ -130,6 +130,7 @@
     '유지': 'Keep', '문장 수정': 'Revise', '조건 좁히기': 'Narrow', '중복 위험': 'Duplicate risk', '접기 권장': 'Retire', '실험 추가': 'Add experiment',
     '진행 중 (': 'In progress (', '제안 문장': 'Suggested sentence', '제안 실험': 'Suggested experiment', '편 완료)': ' papers done)',
     '감사 결과가 들어왔어요.': 'Audit results are in.',
+    '요약과 같은 모델로 검사했어요. 원문을 읽는다는 점은 다르지만 독립적인 검사는 아니에요.': 'Checked with the same model as the summaries: it reads the full text, but it is not an independent check.',
     '감사를 요청했어요. 논문 한 편에 1분 안팎이에요. 끝나면 이 화면에 플래그가 보여요.': 'Audit requested. About a minute per paper; flags appear here when done.',
   };
 

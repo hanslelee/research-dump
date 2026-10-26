@@ -10,7 +10,8 @@ Then, over all papers:
   3. claim action - keep / revise / narrow / duplicate_risk / retire / add_experiment, with the reason.
 
 Flags only: nothing is changed. The report is stored on the claim as "audit" and shown on the web page.
-The auditor model is config.json -> llm.audit and must differ from llm.summary (no grading its own work).
+The auditor model is config.json -> llm.audit, or llm.summary when unset. A different, stronger model is better
+(otherwise the model grades its own work); the report notes when the same model was used.
 Papers without an arXiv PDF are checked against the abstract and marked so.
 Progress is saved after each paper; a run that runs out of time continues where it stopped.
 """
@@ -61,13 +62,14 @@ class OutOfTime(RuntimeError):
 
 
 def audit_agent(config):
+    """llm.audit, or llm.summary when unset. Returns (agent, same_as_summary)."""
     llm_cfg = config.get("llm") or {}
     agent = llm_cfg.get("audit")
     if not agent or agent.get("model") in (None, "", "SET-ME"):
-        raise llm.LLMUnavailable("config.json에 llm.audit 모델을 정해주세요 (요약 모델과 다른 모델)")
-    if agent.get("model") == (llm_cfg.get("summary") or {}).get("model"):
-        raise llm.LLMUnavailable("llm.audit는 llm.summary와 다른 모델이어야 해요 (자기 요약을 자기가 채점하지 않도록)")
-    return agent
+        agent = llm_cfg.get("summary")
+    if not agent:
+        raise llm.LLMUnavailable("config.json에 llm.audit 또는 llm.summary가 없어요")
+    return agent, agent.get("model") == (llm_cfg.get("summary") or {}).get("model")
 
 
 def paper_relations(pid, claim_id, relations, linked):
@@ -86,7 +88,7 @@ def paper_relations(pid, claim_id, relations, linked):
 def run(data_dir: Path, claim_id: str, today: str, log=print, chat=None, fetch=topics.pdf_text, deadline=None):
     chat = chat or llm.chat
     config = json.loads((data_dir / "config.json").read_text())
-    agent = audit_agent(config)
+    agent, same = audit_agent(config)
     language = (config.get("summary") or {}).get("language", "Korean, keeping technical terms in English")
     claims = load_dir(data_dir / "claims")
     if claim_id not in claims:
@@ -104,6 +106,7 @@ def run(data_dir: Path, claim_id: str, today: str, log=print, chat=None, fetch=t
     prev = claim.get("audit") or {}
     report = prev if prev.get("status") == "running" else {"status": "running", "started_at": today, "papers": {}}
     report["model"] = f"{agent['model']}"
+    report["same_as_summary"] = same
 
     def save():
         claim["audit"] = report

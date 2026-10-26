@@ -602,11 +602,12 @@ class AuditTest(Base):
         self.assertEqual({k: v["summary"] for k, v in self.load("papers").items()}, before)  # nothing changed
         self.assertEqual(self.load("claims")["claim:g"]["audit"]["status"], "done")
 
-    def test_auditor_must_differ_from_summary_model(self):
-        cfg = {**CONFIG, "llm": {**CONFIG["llm"], "audit": dict(AGENT)}}
+    def test_same_model_as_summary_is_allowed_and_noted(self):
+        cfg = {**CONFIG, "llm": {k: v for k, v in CONFIG["llm"].items() if k != "audit"}}
+        cfg["llm"]["summary"] = {**AGENT, "model": "auditor"}
         (self.d / "config.json").write_text(json.dumps(cfg))
-        with self.assertRaises(Exception):
-            audit.run(self.d, "claim:g", "2026-10-26", log=lambda *_: None, chat=fake_audit)
+        rep = audit.run(self.d, "claim:g", "2026-10-26", log=lambda *_: None, chat=fake_audit, fetch=lambda a, l: "")
+        self.assertTrue(rep["same_as_summary"])
 
     def test_out_of_time_resumes(self):
         with self.assertRaises(audit.OutOfTime):

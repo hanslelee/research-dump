@@ -1229,6 +1229,7 @@
     }).join('');
     return `${head}
       <p class="meta">${a.status === 'running' ? `진행 중 (${Object.keys(a.papers || {}).length}편 완료)` : `${esc(a.finished_at || a.started_at || '')}`} · ${esc(a.model || '')}</p>
+      ${a.same_as_summary ? '<p class="hint">요약과 같은 모델로 검사했어요. 원문을 읽는다는 점은 다르지만 독립적인 검사는 아니에요.</p>' : ''}
       ${act ? `<div class="audit-action"><span class="flag ${act.action === 'keep' ? 'ok' : act.action === 'retire' || act.action === 'duplicate_risk' ? 'bad' : 'warn'}">${esc(AUDIT_ACTION[act.action] || act.action)}</span>
         <p class="dt">${esc(act.reason)}</p>
         ${act.suggested_text ? `<div class="field"><b>제안 문장</b><p class="dt">${esc(act.suggested_text)}</p></div>` : ''}
