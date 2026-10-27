@@ -11,6 +11,7 @@ import datetime as dt
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -31,7 +32,8 @@ Plain text only: no LaTeX, no markdown.
 Reply with JSON only: {{"claim": "...", "condition": "...", "gap": "..."}}"""
 
 
-def run(data_dir: Path, today: str, log=print, chat=None, only_ids=None):
+def run(data_dir: Path, today: str, log=print, chat=None, only_ids=None, deadline=None):
+    """deadline: stop (progress saved) when time.time() passes it; the rest is done next time."""
     chat = chat or llm.chat
     config = json.loads((data_dir / "config.json").read_text())
     agent = (config.get("llm") or {}).get("summary")
@@ -40,7 +42,7 @@ def run(data_dir: Path, today: str, log=print, chat=None, only_ids=None):
         return []
     opts = config.get("summary") or {}
     language = opts.get("language", "Korean, keeping technical terms in English")
-    max_items = int(opts.get("max_per_run", 60))
+    max_items = int(opts.get("max_per_run", 150))
     every = int(opts.get("save_every", 5))
 
     papers = load_dir(data_dir / "papers")
@@ -52,6 +54,9 @@ def run(data_dir: Path, today: str, log=print, chat=None, only_ids=None):
         log(f"summary: {skipped} papers have no abstract yet")
     done = []
     for p in todo[:max_items]:
+        if deadline and time.time() > deadline:
+            log("summary: out of time, the rest is summarized next time")
+            break
         try:
             reply = chat(agent, SYSTEM.format(language=language), f"Title: {clean_text(p['title'])}\n\nAbstract: {clean_text(p['abstract'])[:4000]}",
                          json_mode=True)

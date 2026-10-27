@@ -688,7 +688,9 @@
       <label><input type="checkbox" data-only="industry" ${state.only.industry ? 'checked' : ''}>기업 논문만<span class="count">${nInd}</span></label>
       <label><input type="checkbox" data-only="starred" ${state.only.starred ? 'checked' : ''}>★ 이상만<span class="count">${nStar}</span></label>
       <label><input type="checkbox" data-only="nosummary" ${state.only.nosummary ? 'checked' : ''}>요약 없음만<span class="count">${nNoSum}</span></label>
-      ${nNoSum ? `<p class="hint">요약 없음 ${nNoSum}편 중 초록 없음 ${nNoAbs}편 (초록이 없으면 자동 요약이 안 돼요)</p>` : ''}`;
+      ${nNoSum ? `<p class="hint">요약 없음 ${nNoSum}편 중 초록 없음 ${nNoAbs}편 (초록이 없으면 자동 요약이 안 돼요)</p>` : ''}
+      ${state.source === 'github' && nNoSum > nNoAbs ? `${requestNoteList(r => r.kind === 'summarize')}${[...state.requests.values()].some(r => r.kind === 'summarize' && r.status !== 'failed') ? ''
+        : `<button type="button" class="mini-wide" data-action="summarize-now">지금 요약하기 (${nNoSum - nNoAbs}편)</button>`}` : ''}`;
     $('#view-toggles').onchange = e => { state.only[e.target.dataset.only] = e.target.checked; renderSidebar(); renderGraph(); };
 
     const counts = {};
@@ -734,9 +736,9 @@
       <button type="button" data-action="request" data-kind="topics" data-id="${esc(p.id)}" ${busy('topics') ? 'disabled' : ''}>${busy('topics') ? '추천 받는 중...' : '연구 주제 추천'}</button>`;
   }
 
-  const REQUEST_LABEL = { audit: '감사', refs: '참고문헌 불러오기', topics: '연구 주제 추천', relations: '관계 찾기', claim_papers: '저장소에서 관련 논문 찾기', claim_web: '관련 논문 웹 검색', add_paper: '논문 추가' };
+  const REQUEST_LABEL = { summarize: '지금 요약하기', audit: '감사', refs: '참고문헌 불러오기', topics: '연구 주제 추천', relations: '관계 찾기', claim_papers: '저장소에서 관련 논문 찾기', claim_web: '관련 논문 웹 검색', add_paper: '논문 추가' };
   const REQUEST_DONE = { topics: '연구 주제 추천 결과가 들어왔어요.', relations: '관계 찾기 결과가 들어왔어요.',
-    audit: '감사 결과가 들어왔어요.', refs: '참고문헌을 불러왔어요.', claim_papers: '관련 논문 찾기 결과가 들어왔어요.', claim_web: '웹 추천 논문이 들어왔어요.', add_paper: '논문을 추가하고 요약과 관계 초안까지 만들었어요.' };
+    summarize: '요약이 끝났어요.', audit: '감사 결과가 들어왔어요.', refs: '참고문헌을 불러왔어요.', claim_papers: '관련 논문 찾기 결과가 들어왔어요.', claim_web: '웹 추천 논문이 들어왔어요.', add_paper: '논문을 추가하고 요약과 관계 초안까지 만들었어요.' };
 
   function requestNoteList(filter) {
     return [...state.requests.values()].filter(filter).map(r => {
@@ -1557,6 +1559,7 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
       relations: '관계 찾기를 요청했어요. 1~3분 뒤 이 논문의 관계에 후보가 생겨요.',
       claim_papers: '관련 논문 찾기를 요청했어요. 1~3분 뒤 관련 논문에 후보가 생겨요.',
       claim_web: '웹 검색을 요청했어요. 2~4분 뒤 웹 추천 논문이 보여요.',
+      summarize: '요약을 요청했어요. 10편에 2분 안팎이에요. 끝나면 화면이 새로 고쳐져요.',
       audit: '감사를 요청했어요. 논문 한 편에 1분 안팎이에요. 끝나면 이 화면에 플래그가 보여요.',
       refs: '브라우저에서 바로 불러오지 못해서 GitHub Actions로 요청했어요. 1분쯤 걸려요.',
       add_paper: '논문 추가를 요청했어요. 저장, 요약, 관계 초안까지 1~3분 걸려요.',
@@ -1570,6 +1573,7 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     if (r.paper && r.kind !== 'add_paper' && state.papers.has(r.paper)) afterPaperChange(r.paper);
     else if (r.claim && state.claims.has(r.claim)) showClaim(r.claim);
     else if (state.tab === 'papers') renderList();
+    else if (state.tab === 'home') renderSidebar();
   }
 
   // while any request is pending, check every 20 s whether its file is gone (processed) or failed
@@ -1674,6 +1678,7 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
     }
     else if (action === 'claim-web') makeRequest('claim_web', null, { claim: id });
     else if (action === 'claim-audit') makeRequest('audit', null, { claim: id });
+    else if (action === 'summarize-now') makeRequest('summarize', null, {});
     else if (action === 'web-sort') { state.topics.webSort = b.dataset.sort; showClaim(id); }
     else if (action === 'web-add') {
       const item = state.claims.get(b.dataset.claim)?.web_suggestions?.items?.find(x => x.id === id);

@@ -8,6 +8,7 @@ Kinds:
   claim_papers  저장소에서 관련 논문 찾기: a research topic vs every paper (claimrel.link)
   claim_web     관련 논문 웹 검색: Semantic Scholar search for a research topic -> web_suggestions on the claim
   refs          베이스라인 · 주요 참고 논문: the paper's references from Semantic Scholar -> refs/<paper>.json
+  summarize     지금 요약하기: summarize every paper that has an abstract but no summary (summarize.run)
   audit         감사: re-check a research topic's papers against their full text (audit.run), flags only
 
   add_paper     추가하기: add a paper by arXiv id or title, tag and summarize it, then draft relations:
@@ -37,6 +38,7 @@ import checkpoint  # noqa: E402
 import claimrel  # noqa: E402
 import compare  # noqa: E402
 import refs  # noqa: E402
+import summarize  # noqa: E402
 import websearch  # noqa: E402
 import topics  # noqa: E402
 from common import file_for, load_dir, read_json, write_json  # noqa: E402
@@ -112,6 +114,14 @@ def run(data_dir: Path, today: str, log=print, chat=None, fetch=None, find=None,
                     raise ValueError("Semantic Scholar에 이 논문의 참고문헌 정보가 없어요")
                 refs.save(data_dir, pid, rec, today)
                 msg = None  # quick lookup: no Telegram message
+            elif kind == "summarize":
+                done_now = summarize.run(data_dir, today, log, chat=chat, deadline=started + budget if budget else None)
+                left = sum(1 for p in load_dir(data_dir / "papers").values()
+                           if not (p.get("summary") or {}).get("claim") and (p.get("abstract") or "").strip())
+                if left and budget and time.time() - started > budget:
+                    log(f"requests: summarize paused, {left} left")
+                    break  # stays pending: the next run continues
+                msg = f"<b>지금 요약하기</b>\n{len(done_now)}편 요약" + (f" · 남은 {left}편은 다음에" if left else "")
             elif kind == "audit":
                 cid = req.get("claim")
                 kw = {"fetch": fetch} if fetch else {}

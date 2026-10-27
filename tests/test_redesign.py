@@ -617,3 +617,28 @@ class AuditTest(Base):
                   chat=lambda a, s, u, **kw: (asked.append(json.loads(u).get("paper", {}).get("id")), fake_audit(a, s, u))[1])
         self.assertEqual(asked, ["arxiv:1", "arxiv:2", None])
         self.assertEqual(self.load("claims")["claim:g"]["audit"]["papers"]["arxiv:1"]["source"], "abstract")
+
+
+class SummarizeNowTest(Base):
+    def test_summarize_request_and_time_budget(self):
+        for i in range(3):
+            p = paper(f"arxiv:{i}", f"P{i}")
+            p["summary"] = {"claim": "", "condition": "", "gap": ""}
+            self.put("papers", p)
+        (self.d / "requests").mkdir()
+        self.put("requests", {"id": "req:s", "kind": "summarize", "status": "pending"})
+
+        def slow(agent, system, user, **kw):
+            import time
+            t = time.perf_counter()
+            while time.perf_counter() - t < 0.05:
+                pass
+            return {"text": '{"claim": "c", "condition": "d", "gap": "g"}', "model": "m"}
+        with mock.patch.dict(os.environ, {"TIME_BUDGET": "0.06"}):
+            requests_run.run(self.d, "2026-10-27", log=lambda *_: None, chat=slow)
+        done = sum(1 for p in self.load("papers").values() if p["summary"]["claim"])
+        self.assertTrue(0 < done < 3)
+        self.assertIn("req:s", self.load("requests"))  # stays pending for the next run
+        requests_run.run(self.d, "2026-10-27", log=lambda *_: None, chat=slow)
+        self.assertTrue(all(p["summary"]["claim"] for p in self.load("papers").values()))
+        self.assertEqual(self.load("requests"), {})
