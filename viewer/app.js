@@ -129,6 +129,31 @@
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) if (RDI18N.HANGUL.test(n.nodeValue) || I18N.orig.has(n)) translateText(n);
     if (pending.size) { clearTimeout(trTimer); trTimer = setTimeout(translatePending, 400); }
+    updateTranslateButton();
+  }
+
+  function updateTranslateButton() {
+    const b = $('#btn-translate'); if (!b) return;
+    const left = I18N.lang === 'en' && state.source === 'github'
+      && [...document.querySelectorAll('.dt')].some(el => {
+        if (el.closest('[hidden]')) return false;
+        const t = I18N.dataOrig.get(el)?.text || el.textContent;
+        return RDI18N.HANGUL.test(t) && dataText(t) === t;  // Korean with no translation yet
+      });
+    b.hidden = !left;
+  }
+
+  // 번역: translate the Korean data on screen now (asks for the key again if it was cancelled before)
+  let translating = false;
+  async function translateNow(btn) {
+    trAsked = false; translating = true;
+    for (const el of document.querySelectorAll('.dt')) { const t = I18N.dataOrig.get(el)?.text || el.textContent; if (RDI18N.HANGUL.test(t)) pending.add(t); }
+    if (!pending.size) return;
+    btn.disabled = true; btn.textContent = 'Translating...';
+    while (pending.size) { const n = pending.size; await translatePending(); if (pending.size >= n) break; }
+    translating = false;
+    btn.disabled = false; btn.textContent = 'Translate';
+    updateTranslateButton();
   }
 
   // your own data in EN: translate with the summary model (your key, this browser only), cached here
@@ -151,7 +176,7 @@
       pending.clear();
       toast(`${I18N.lang === 'en' ? 'Could not translate' : '번역하지 못했어요'}: ${err.message}`, true);
     }
-    if (pending.size) setTimeout(translatePending, 200);
+    if (pending.size && !translating) setTimeout(translatePending, 200);
   }
 
   new MutationObserver(muts => {
@@ -170,6 +195,7 @@
     if (cy && state.tab === 'home') renderGraph();
   }
   $('#lang').onclick = e => { const b = e.target.closest('button[data-lang]'); if (b) setLang(b.dataset.lang); };
+  $('#btn-translate').onclick = e => translateNow(e.currentTarget);
 
   // ---------- storage (best effort) ----------
   const store = {
@@ -891,8 +917,8 @@
   }
 
   function relCard(r, otherId) {
-    const target = state.papers.has(otherId) ? `<a href="#" data-paper="${esc(otherId)}">${esc(nameOf(otherId))}</a>`
-      : state.claims.has(otherId) ? `<a href="#" data-claim="${esc(otherId)}">${esc(nameOf(otherId))}</a>` : esc(nameOf(otherId));
+    const target = state.papers.has(otherId) ? `<a href="#" class="dt" data-paper="${esc(otherId)}">${esc(nameOf(otherId))}</a>`
+      : state.claims.has(otherId) ? `<a href="#" class="dt" data-claim="${esc(otherId)}">${esc(nameOf(otherId))}</a>` : `<span class="dt">${esc(nameOf(otherId))}</span>`;
     const actions = r.status === 'new'
       ? `<div class="actions"><button type="button" data-action="rel-approve" data-id="${esc(r.id)}">승인</button><button type="button" class="quiet" data-action="rel-reject" data-id="${esc(r.id)}">거절</button></div>`
       : r.status === 'approved'
