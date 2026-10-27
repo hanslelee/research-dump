@@ -780,7 +780,7 @@
         <button type="button" class="mini quiet" data-action="request-drop" data-id="${esc(r.id)}">취소하기</button>`;
       const since = r.requested_at ? `<span class="req-elapsed" data-t="${esc(r.requested_at)}">${elapsed(r.requested_at)}</span>` : esc(r.created_at || '');
       return r.status === 'failed'
-        ? `<div class="req failed">${what}${target} 실패: ${esc(r.error || '')} <div class="actions">${buttons}</div></div>`
+        ? `<div class="req failed">${what}${target} 실패: <span class="dt">${esc(r.error || '')}</span> <div class="actions">${buttons}</div></div>`
         : `<div class="req">${what}${target} 진행 중 · ${since} <div class="actions">${buttons}</div></div>`;
     }).join('');
   }
@@ -979,7 +979,7 @@
       <div class="actions wrap">${markButtons(p)}</div>
       <div class="actions wrap">${requestButtons(p)}</div>
       ${requestNotes(p)}
-      ${pv.screen_reason ? `<p class="meta">스크리닝: ${esc(pv.screen_reason)}</p>` : ''}
+      ${pv.screen_reason ? `<p class="meta">스크리닝: <span class="dt">${esc(pv.screen_reason)}</span></p>` : ''}
       <h4>메모</h4>
       ${memoForm('paper', id, p.memo)}
       <h4>요약</h4>
@@ -1078,7 +1078,7 @@
       ${auditSection(c, id)}
       <h4>실험</h4>
       ${(c.experiments || []).map((x, i) => `<div class="rel exp">
-        <div><b>${esc(x.title)}</b> <span class="meta">${esc(x.date || '')}</span>
+        <div><b class="dt">${esc(x.title)}</b> <span class="meta">${esc(x.date || '')}</span>
           <select class="exp-status" data-claim="${esc(id)}" data-i="${i}">${options(EXP_STATUS, x.status || 'plan', EXP_STATUS_KO)}</select></div>
         ${x.setup ? field('설정', x.setup) : ''}${x.result ? field('결과', x.result) : ''}</div>`).join('') || '<p class="hint">기록된 실험 없음</p>'}
       <details class="add-rel">
@@ -1093,7 +1093,7 @@
         </form>
       </details>
       <details class="add-rel"><summary>버전 기록 (${(c.history || []).length})</summary>
-        ${(c.history || []).slice().reverse().map(h => `<div class="rel"><b>v${esc(h.version)}</b> ${esc(h.text)}<p class="meta">${esc(h.changed_at || '')} ${esc(h.reason || '')}</p></div>`).join('') || '<p class="hint">이전 버전 없음</p>'}
+        ${(c.history || []).slice().reverse().map(h => `<div class="rel"><b>v${esc(h.version)}</b> <span class="dt">${esc(h.text)}</span><p class="meta">${esc(h.changed_at || '')} <span class="dt">${esc(h.reason || '')}</span></p></div>`).join('') || '<p class="hint">이전 버전 없음</p>'}
       </details>
     `;
   }
@@ -1437,7 +1437,7 @@
     return `<div class="row-card" data-ex="${esc(x.id)}">
       <div class="row-title">${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a>` : esc(x.title)}</div>
       <div class="meta">${esc([x.venue, date, `제외 ${String(x.screened_at || '').slice(5).replace('-', '.')}`].filter(Boolean).join(' · '))}</div>
-      <div class="row-text">제외 이유: ${esc(x.screen_reason || '-')}</div>
+      <div class="row-text">제외 이유: <span class="dt">${esc(x.screen_reason || '-')}</span></div>
       ${x.abstract ? `<details class="abstract"><summary>초록 보기</summary><p>${esc(x.abstract)}</p></details>` : ''}
       <div class="actions"><button type="button" data-action="include" data-id="${esc(x.id)}">포함시키기</button></div>
     </div>`;
