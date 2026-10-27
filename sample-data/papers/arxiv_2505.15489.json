@@ -23,13 +23,13 @@
     ]
   },
   "summary": {
-    "claim": "",
-    "condition": "",
-    "gap": ""
+    "claim": "VLM은 멀티모달 뉴스에서 제작자의 오도 의도를 추론하지 못하고, 일관성이나 세련된 문체 같은 표면 단서에 의존한다. 이를 재는 DeceptionDecoded 벤치마크를 만들었다.",
+    "condition": "신뢰할 수 있는 원문 기사와 연결된 이미지-캡션 1.2만 쌍. 오도 의도 탐지, 출처 귀속, 제작자 의도 추론 세 과제. VLM 14개 평가.",
+    "gap": "(추론) 생성 프레임워크로 만든 데이터라 실제 허위정보의 분포와 다를 수 있다. 저자는 실제 데이터로의 전이가 잘 된다고 보고했다."
   },
   "source": "manual",
   "provenance": {
-    "summary_model": "manual",
+    "summary_model": "demo (written from the abstract)",
     "created_at": "2026-10-14"
   },
   "marks": {

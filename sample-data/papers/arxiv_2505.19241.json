@@ -23,13 +23,13 @@
     ]
   },
   "summary": {
-    "claim": "",
-    "condition": "",
-    "gap": ""
+    "claim": "선형 보상 가정 없이 비선형 보상에서도 이론적 근거가 있는 선택 기준으로, 어떤 선호 비교를 사람에게 라벨링받을지 고르는 ActiveDPO가 기존 방법보다 적은 라벨로 더 잘 정렬한다.",
+    "condition": "정렬 중인 LLM 자체로 보상 모델을 정의해 선택에 사용. 여러 모델과 실제 선호 데이터셋.",
+    "gap": "(추론) 일반 선호 정렬 성능 위주이고, 안전 관련 선호 데이터에서 어떤 샘플이 뽑히는지는 다루지 않았다."
   },
   "source": "manual",
   "provenance": {
-    "summary_model": "manual",
+    "summary_model": "demo (written from the abstract)",
     "created_at": "2026-10-14"
   },
   "marks": {

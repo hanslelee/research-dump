@@ -21,13 +21,13 @@
     ]
   },
   "summary": {
-    "claim": "",
-    "condition": "",
-    "gap": ""
+    "claim": "설득 문구에 LLM이 정답을 바꾸는 것은 중간 layer의 소수 decision head 때문이다. 얕은 head가 설득 키워드를 읽어 option-routing 특징을 쓰고, 이것이 decision head의 attention을 설득 대상으로 돌린다.",
+    "condition": "통제된 객관식 과제, 오픈소스 모델 4계열, GEO 기반 출처 선택 과제. decision head의 key projection에 저랭크 업데이트로 완화.",
+    "gap": "(추론) 객관식 설정에 한정되어, 자유 서술 답변이나 사용자 반박이 여러 턴 이어지는 상황에서도 같은 회로인지는 열려 있다."
   },
   "source": "manual",
   "provenance": {
-    "summary_model": "manual",
+    "summary_model": "demo (written from the abstract)",
     "created_at": "2026-10-14"
   },
   "marks": {

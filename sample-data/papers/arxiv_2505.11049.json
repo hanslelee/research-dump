@@ -23,13 +23,13 @@
     ]
   },
   "summary": {
-    "claim": "",
-    "condition": "",
-    "gap": ""
+    "claim": "온라인 강화학습으로 추론하며 판정하도록 학습한 VLM용 가드 모델 GuardReasoner-VL이 2등 모델보다 평균 F1을 19.27% 높였다.",
+    "condition": "텍스트, 이미지, 텍스트+이미지 입력 12.3만 개 학습 데이터. SFT 후 rejection sampling, 난이도 높인 데이터 결합, 길이 고려 보상으로 RL. 3B/7B 공개.",
+    "gap": "(추론) 비디오나 오디오 입력은 다루지 않고, 가드 모델의 판정 오류가 어떤 유형에서 나는지는 분석하지 않았다."
   },
   "source": "manual",
   "provenance": {
-    "summary_model": "manual",
+    "summary_model": "demo (written from the abstract)",
     "created_at": "2026-10-14"
   },
   "marks": {

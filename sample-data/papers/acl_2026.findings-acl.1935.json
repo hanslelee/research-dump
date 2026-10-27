@@ -24,13 +24,13 @@
     ]
   },
   "summary": {
-    "claim": "",
-    "condition": "",
-    "gap": ""
+    "claim": "사전학습 데이터에 답이 있는지를 기준으로 답할지 말지를 정하면 LLM이 더 정직해진다. 사전학습 문서를 검색해 답변 가능 여부를 판정하는 RETAIN이 R-Tuning보다 EM-F1을 약 18점 높였다.",
+    "condition": "Pythia-12b-deduped와 공개된 Pile 코퍼스, TriviaQA에서 만든 TIP-TriviaQA 벤치마크. 사실형 질문만 다룬다.",
+    "gap": "(저자) 사전학습 데이터가 공개된 작은 모델(Pythia 12B)에서만 실험했고, multi-hop이나 수학 추론 질문은 다루지 않았다."
   },
   "source": "manual",
   "provenance": {
-    "summary_model": "manual",
+    "summary_model": "demo (written from the abstract)",
     "created_at": "2026-10-14"
   },
   "marks": {

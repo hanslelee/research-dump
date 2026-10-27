@@ -23,13 +23,13 @@
     ]
   },
   "summary": {
-    "claim": "",
-    "condition": "",
-    "gap": ""
+    "claim": "hidden state 위의 비선형 안전 분류기를 control barrier function으로 써서, 생성 중 위험 영역으로 가는 잠재 궤적을 밀어내는 BarrierSteer가 가중치 변경 없이 공격 성공률을 낮춘다.",
+    "condition": "추론 시점, 여러 안전 제약을 합치는 constraint merging. 여러 모델 계열과 데이터셋.",
+    "gap": "(저자) 보장은 학습된 barrier가 의도한 안전 속성을 제대로 담고 있을 때만 성립한다."
   },
   "source": "manual",
   "provenance": {
-    "summary_model": "manual",
+    "summary_model": "demo (written from the abstract)",
     "created_at": "2026-10-14"
   },
   "marks": {

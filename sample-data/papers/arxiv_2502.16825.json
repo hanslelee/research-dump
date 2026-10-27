@@ -23,13 +23,13 @@
     ]
   },
   "summary": {
-    "claim": "",
-    "condition": "",
-    "gap": ""
+    "claim": "on-policy 샘플 수를 늘릴 때 최고 보상을 chosen, 최저 보상을 rejected로 고르면 오히려 성능이 떨어진다. rejected를 보상 분포의 μ−2σ 지점에서 고르면 샘플이 늘수록 성능이 계속 오른다.",
+    "condition": "반복 샘플링으로 만든 DPO 선호 데이터, 보상 모델로 점수 매김. 4개 모델, AlpacaEval 2로 평가.",
+    "gap": "(추론) 일반 지시 따르기 성능만 평가해서, 이 선택 규칙이 안전 정렬이나 calibration에도 같은 효과를 내는지는 모른다."
   },
   "source": "manual",
   "provenance": {
-    "summary_model": "manual",
+    "summary_model": "demo (written from the abstract)",
     "created_at": "2026-10-14"
   },
   "marks": {

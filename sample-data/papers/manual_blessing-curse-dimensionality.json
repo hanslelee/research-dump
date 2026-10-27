@@ -23,13 +23,13 @@
     ]
   },
   "summary": {
-    "claim": "",
-    "condition": "",
-    "gap": ""
+    "claim": "LLM의 높은 hidden 차원은 성능에는 도움이 되지만, activation 공간의 선형 구조를 activation engineering으로 악용해 안전 정렬을 우회하게 만든다. 표현을 저차원으로 투영하면 이런 jailbreak에 덜 취약해진다.",
+    "condition": "여러 크기의 LLM, 표현 공학 기반 jailbreak. 은닉 차원과 선형 jailbreak의 관계를 이론으로 분석.",
+    "gap": "(추론) 차원을 줄일 때 일반 성능이나 정상적인 steering(유익한 개입)까지 막히는지는 초록에서 알 수 없다."
   },
   "source": "manual",
   "provenance": {
-    "summary_model": "manual",
+    "summary_model": "demo (written from the abstract)",
     "created_at": "2026-10-14"
   },
   "marks": {

@@ -21,13 +21,13 @@
     ]
   },
   "summary": {
-    "claim": "",
-    "condition": "",
-    "gap": ""
+    "claim": "VLM이 말로 표현하는 확신은 추론 과정과 거의 무관해서, 추론을 고쳐 틀린 답에 이르러도 높은 확신을 말한다. calibration 학습이 이를 악화시킬 수 있고 ECE, AUROC로는 드러나지 않는다.",
+    "condition": "좋은/나쁜 추론 궤적 쌍으로 만든 TGS-Bench, 벤치마크 10개. TGS-self와 TGS-pair 지표 제안.",
+    "gap": "(저자) 결과는 평가한 VLM과 calibration 방법에 한정된다. (추론) 텍스트 LLM이나 내부 표현 기반 확신에도 같은 단절이 있는지는 열려 있다."
   },
   "source": "manual",
   "provenance": {
-    "summary_model": "manual",
+    "summary_model": "demo (written from the abstract)",
     "created_at": "2026-10-14"
   },
   "marks": {

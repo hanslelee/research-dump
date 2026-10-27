@@ -23,13 +23,13 @@
     ]
   },
   "summary": {
-    "claim": "",
-    "condition": "",
-    "gap": ""
+    "claim": "멀티모달 머신 언러닝(MMU)은 공개된 뒤에는 견고하지 않다. 프롬프트 접미사를 최적화해 사적 정보 후보를 생성하게 하고 그 출력으로 미세조정하는 POPS 공격이 지운 정보를 거의 다 복원한다.",
+    "condition": "공개된 언러닝 MLLM에 접근 가능한 공격자. 여러 MMU 벤치마크.",
+    "gap": "(추론) 공격만 제안하고, 이 복원을 막는 언러닝 방법은 제시하지 않았다."
   },
   "source": "manual",
   "provenance": {
-    "summary_model": "manual",
+    "summary_model": "demo (written from the abstract)",
     "created_at": "2026-10-14"
   },
   "marks": {

@@ -24,13 +24,13 @@
     ]
   },
   "summary": {
-    "claim": "",
-    "condition": "",
-    "gap": ""
+    "claim": "LLM은 명백한 허위정보는 잘 거르지만, 반박하기 어렵게 다듬어진 증거에는 쉽게 넘어가 거짓 주장에 대한 믿음 점수가 평균 93% 오른다. 기만 의도를 추론해 경고하는 DIS가 이를 줄인다.",
+    "condition": "여러 역할의 LLM이 협업해 만든 MisBelief 데이터 4,800개, 세 난이도. LLM 7개 평가.",
+    "gap": "(추론) 생성된 증거로만 평가해서, 실제 사람이 만든 정교한 허위정보에서도 같은 크기의 효과가 나는지는 모른다."
   },
   "source": "manual",
   "provenance": {
-    "summary_model": "manual",
+    "summary_model": "demo (written from the abstract)",
     "created_at": "2026-10-14"
   },
   "marks": {

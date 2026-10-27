@@ -24,13 +24,13 @@
     ]
   },
   "summary": {
-    "claim": "",
-    "condition": "",
-    "gap": ""
+    "claim": "여러 모델의 응답으로 만든 합성 선호 데이터로 DPO를 하면 일반 벤치마크는 오르지만 jailbreak 공격 성공률이 높아진다. 대상 모델 자신의 응답만 쓰는 편이 안전에 더 좋다.",
+    "condition": "Llama, Mistral, Qwen 계열에서 DPO 안전 정렬. 더 강한 모델(GPT-4o 등)이 chosen, 대상 모델이 rejected를 낼 때 문제가 가장 크다.",
+    "gap": "(추론) 원인으로 제시한 '선형 분리 가능성이 높아 표면 단서에 의존한다'는 설명이 다른 정렬 방법(PPO 등)에도 해당하는지는 확인하지 않았다."
   },
   "source": "manual",
   "provenance": {
-    "summary_model": "manual",
+    "summary_model": "demo (written from the abstract)",
     "created_at": "2026-10-14"
   },
   "marks": {

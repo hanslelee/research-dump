@@ -21,13 +21,13 @@
     ]
   },
   "summary": {
-    "claim": "",
-    "condition": "",
-    "gap": ""
+    "claim": "판정 전에 추론하는 가드레일 모델 GuardReasoner-Omni가 텍스트, 이미지, 비디오, 오디오를 함께 다루며 기존 최고 성능 모델보다 낫다.",
+    "condition": "4가지 모달리티 18.1만 개 학습 데이터. SFT로 시작한 뒤 간결한 정답 보상으로 RL. 3B/7B 공개.",
+    "gap": "(추론) 초록에 벤치마크와 비교 대상이 없고, 모달리티별로 어디서 오판하는지는 다루지 않았다."
   },
   "source": "manual",
   "provenance": {
-    "summary_model": "manual",
+    "summary_model": "demo (written from the abstract)",
     "created_at": "2026-10-14"
   },
   "marks": {

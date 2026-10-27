@@ -23,13 +23,13 @@
     ]
   },
   "summary": {
-    "claim": "",
-    "condition": "",
-    "gap": ""
+    "claim": "tokenized Brier score라는 proper scoring rule 손실로 미세조정하는 ConfTuner가 LLM이 말로 표현하는 확신을 실제 정답률에 맞게 만든다. GPT-4o 같은 블랙박스 모델에도 전이된다.",
+    "condition": "다양한 추론 과제, 정답 확신 라벨 없이 학습. self-correction과 model cascade에서도 이득.",
+    "gap": "(추론) 사용자가 반박하는 상황에서 확신이 어떻게 변하는지, 내부 표현의 확신과 말로 하는 확신이 일치하는지는 다루지 않았다."
   },
   "source": "manual",
   "provenance": {
-    "summary_model": "manual",
+    "summary_model": "demo (written from the abstract)",
     "created_at": "2026-10-14"
   },
   "marks": {
