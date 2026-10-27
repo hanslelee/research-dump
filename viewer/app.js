@@ -132,15 +132,20 @@
     updateTranslateButton();
   }
 
+  // In EN with your own repository the Translate button is always there (top bar, and in each detail panel);
+  // it is highlighted while untranslated Korean data is on screen.
   function updateTranslateButton() {
-    const b = $('#btn-translate'); if (!b) return;
-    const left = I18N.lang === 'en' && state.source === 'github'
-      && [...document.querySelectorAll('.dt')].some(el => {
-        if (el.closest('[hidden]')) return false;
-        const t = I18N.dataOrig.get(el)?.text || el.textContent;
-        return RDI18N.HANGUL.test(t) && dataText(t) === t;  // Korean with no translation yet
-      });
-    b.hidden = !left;
+    const show = I18N.lang === 'en' && state.source === 'github';
+    const left = show && [...document.querySelectorAll('.dt')].some(el => {
+      if (el.closest('[hidden]')) return false;
+      const t = I18N.dataOrig.get(el)?.text || el.textContent;
+      return RDI18N.HANGUL.test(t) && dataText(t) === t;  // Korean with no translation yet
+    });
+    for (const b of document.querySelectorAll('#btn-translate, .btn-translate')) {
+      b.hidden = !show;
+      b.classList.toggle('on', left);
+      if (!b.disabled) b.textContent = left ? 'Translate to English' : 'Translated';
+    }
   }
 
   // 번역: translate the Korean data on screen now (asks for the key again if it was cancelled before)
@@ -152,7 +157,7 @@
     btn.disabled = true; btn.textContent = 'Translating...';
     while (pending.size) { const n = pending.size; await translatePending(); if (pending.size >= n) break; }
     translating = false;
-    btn.disabled = false; btn.textContent = 'Translate';
+    btn.disabled = false;
     updateTranslateButton();
   }
 
@@ -196,6 +201,7 @@
   }
   $('#lang').onclick = e => { const b = e.target.closest('button[data-lang]'); if (b) setLang(b.dataset.lang); };
   $('#btn-translate').onclick = e => translateNow(e.currentTarget);
+  document.addEventListener('click', e => { const b = e.target.closest('.btn-translate'); if (b) translateNow(b); });
 
   // ---------- storage (best effort) ----------
   const store = {
@@ -968,6 +974,7 @@
       <h3>${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>` : esc(p.title)}</h3>
       ${paperHead(p)}
       ${authors.length ? `<div class="meta">${esc(authors.join(', '))}</div>` : ''}
+      <button type="button" class="mini btn-translate" hidden>Translate to English</button>
       <div class="chips">${chips.map(c => `<span class="chip">${esc(c)}</span>`).join('')}</div>
       <div class="actions wrap">${markButtons(p)}</div>
       <div class="actions wrap">${requestButtons(p)}</div>
@@ -1046,6 +1053,7 @@
     const busyClaim = busyKind('claim_papers'), busyWeb = busyKind('claim_web');
     box.innerHTML = `
       <h3 class="dt">${esc(c.text)}</h3>
+      <button type="button" class="mini btn-translate" hidden>Translate to English</button>
       <div class="meta">${c.origin === 'ai' ? `<span class="chip ai">AI 추천</span> ` : ''}${esc(CLAIM_STATUS_KO[c.status] || c.status)} · v${esc(c.version)}${c.created_at ? ` · ${esc(c.created_at)}` : ''}
         <button type="button" class="mini" data-action="claim-edit" data-id="${esc(id)}">수정</button></div>
       ${c.origin === 'ai' && c.status === 'candidate' ? `<div class="actions"><button type="button" data-action="claim-status" data-status="active" data-id="${esc(id)}">진행할래요</button><button type="button" class="quiet" data-action="claim-status" data-status="retired" data-id="${esc(id)}">접기</button></div>` : ''}

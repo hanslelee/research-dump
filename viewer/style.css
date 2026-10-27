@@ -281,3 +281,6 @@ details.refs-box > summary { cursor: pointer; font-size: 12px; color: var(--quie
 .audit-action { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
 .audit-action p { margin: 6px 0 0; font-size: 13px; }
 .audit-sum, .audit-rel { margin-top: 6px; font-size: 13px; }
+
+#btn-translate.on, .btn-translate.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-translate { margin: 4px 0; }
