@@ -21,9 +21,9 @@
     ]
   },
   "summary": {
-    "claim": "노이즈가 섞인 선호 라벨이 배치 단위 최적화를 왜곡한다. DPO의 암묵적 보상 마진으로 업데이트 방향과 크기를 조절하는 CompassDPO가 라벨 노이즈에서 특히 안정적인 안전 정렬을 낸다.",
-    "condition": "PKU-SafeRLHF, 기반 모델 4개, 분포 밖 안전 벤치마크, 라벨 뒤집기 노이즈 실험. 외부 보상 모델 불필요.",
-    "gap": "(추론) 어떤 라벨이 신뢰할 수 없는지를 마진으로만 판단해서, 체계적으로 편향된 라벨(모두 같은 방향으로 틀린 경우)에는 약할 수 있다."
+    "claim": "Noisy preference labels distort batch-level optimization. CompassDPO uses DPO's implicit reward margin to control update direction and size, giving stable safety alignment, especially under label noise.",
+    "condition": "PKU-SafeRLHF, four backbones, out-of-distribution safety benchmarks, label-flip noise; no external reward model.",
+    "gap": "(Inferred) Unreliable labels are judged only by the margin, so systematically biased labels (all wrong in the same direction) may still hurt."
   },
   "source": "manual",
   "provenance": {

@@ -24,9 +24,9 @@
     ]
   },
   "summary": {
-    "claim": "activation을 고정된 2차원 부분공간 안에서 회전시키는 Angular Steering이 벡터 덧셈과 방향 제거를 하나의 기하 틀로 묶고, 행동을 연속적으로 세밀하게 조절한다.",
-    "condition": "거절 steering과 감정 steering, 여러 모델 계열과 크기. 목표 방향과 정렬된 activation만 회전하는 적응형 변형 포함.",
-    "gap": "(추론) 거절과 감정 외의 행동(sycophancy, 확신 등)에서 회전이 다른 행동을 얼마나 함께 끌고 가는지는 다루지 않았다."
+    "claim": "Angular Steering rotates activations within a fixed 2D subspace, unifying vector addition and directional ablation in one geometric frame and giving smooth, fine-grained control of behavior.",
+    "condition": "Refusal and emotion steering across several model families and sizes; an adaptive variant rotates only activations aligned with the target direction.",
+    "gap": "(Inferred) How much rotation drags other behaviors (e.g., sycophancy, confidence) along is not studied."
   },
   "source": "manual",
   "provenance": {

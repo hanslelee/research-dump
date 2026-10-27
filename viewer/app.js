@@ -80,7 +80,7 @@
   // Interface text is rewritten on screen (i18n.js). Data text (class "dt") uses stored translations
   // (demo data) or, for your own data, the summary model in this browser; memos (class "raw") stay as written.
   const I18N = { lang: 'ko', orig: new WeakMap(), set: new WeakMap(), attrs: new WeakMap(), dataOrig: new WeakMap() };
-  try { I18N.lang = localStorage.getItem('research-dump.lang') === 'en' ? 'en' : 'ko'; } catch { /* ignore */ }
+  try { const saved = localStorage.getItem('research-dump.lang'); I18N.chosen = !!saved; I18N.lang = saved === 'en' ? 'en' : 'ko'; } catch { /* ignore */ }
   const trCache = (() => { try { return JSON.parse(localStorage.getItem('research-dump.tr.en') || '{}'); } catch { return {}; } })();
   const dataText = text => state.dataDict?.[text] || trCache[text] || text;
   const SKIP = 'textarea, input, select, script, style, .raw';
@@ -191,9 +191,9 @@
     }
   }).observe(document.body, { childList: true, subtree: true, characterData: true });
 
-  function setLang(lang) {
+  function setLang(lang, { save = true } = {}) {
     I18N.lang = lang;
-    try { localStorage.setItem('research-dump.lang', lang); } catch { /* ignore */ }
+    if (save) { I18N.chosen = true; try { localStorage.setItem('research-dump.lang', lang); } catch { /* ignore */ } }
     document.documentElement.lang = lang;
     for (const b of document.querySelectorAll('#lang button')) b.classList.toggle('on', b.dataset.lang === lang);
     translateTree(document.body);
@@ -392,6 +392,7 @@
         ? await loadGitHub(conn, (d, n) => { status.textContent = `바뀐 파일 불러오는 중... ${d}/${n}`; })
         : await loadDemo();
       state.source = kind === 'github' && conn ? 'github' : 'demo';
+      if (state.source === 'demo' && !I18N.chosen && I18N.lang !== 'en') setLang('en', { save: false });  // the demo is in English
       ingest(data);
       $('#source-label').textContent = state.source === 'github' ? `저장소: ${conn.repo}` : '데모 데이터 (공개 논문만, 저장 안 됨)';
       $('#scope').textContent = state.config.scope ? `연구 스콥 · ${state.config.scope}` : '';
@@ -1899,6 +1900,6 @@ Reply with JSON only: {"claim": "...", "condition": "...", "gap": "..."}`;
 
   const startTab = ['papers', 'topics'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'home';
   setTab(startTab, { push: false });
-  setLang(I18N.lang);
+  setLang(I18N.lang, { save: false });
   useSource(store.get() ? 'github' : 'demo');
 })();

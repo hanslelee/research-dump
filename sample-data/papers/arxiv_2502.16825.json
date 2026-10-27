@@ -23,9 +23,9 @@
     ]
   },
   "summary": {
-    "claim": "on-policy 샘플 수를 늘릴 때 최고 보상을 chosen, 최저 보상을 rejected로 고르면 오히려 성능이 떨어진다. rejected를 보상 분포의 μ−2σ 지점에서 고르면 샘플이 늘수록 성능이 계속 오른다.",
-    "condition": "반복 샘플링으로 만든 DPO 선호 데이터, 보상 모델로 점수 매김. 4개 모델, AlpacaEval 2로 평가.",
-    "gap": "(추론) 일반 지시 따르기 성능만 평가해서, 이 선택 규칙이 안전 정렬이나 calibration에도 같은 효과를 내는지는 모른다."
+    "claim": "When scaling on-policy samples, picking the highest-reward response as chosen and the lowest as rejected makes performance drop. Picking the rejected response at μ−2σ of the reward distribution keeps improving performance as samples grow.",
+    "condition": "DPO preference data built by repeated sampling and scored by a reward model; four models, evaluated on AlpacaEval 2.",
+    "gap": "(Inferred) Only general instruction-following is evaluated, so it is unknown whether this selection rule helps safety alignment or calibration."
   },
   "source": "manual",
   "provenance": {

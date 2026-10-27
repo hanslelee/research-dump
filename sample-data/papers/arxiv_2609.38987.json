@@ -22,9 +22,9 @@
     ]
   },
   "summary": {
-    "claim": "선호 증류에서 학생 모델 자신의 실패 응답보다, 더 작은 고정 모델의 응답을 rejected로 쓰는 편이 계산은 적게 들고 더 강한 학생을 만든다.",
-    "condition": "7B~72B 학생 모델, 코드 생성과 수학 추론. DPO 효용 상한을 선형화 특징 모델로 유도.",
-    "gap": "(추론) 정답이 분명한 코드와 수학에서만 실험해서, 안전이나 정직성처럼 정답이 애매한 선호에도 같은 결과가 나오는지는 모른다."
+    "claim": "In preference distillation, using responses from smaller frozen models as rejects beats the student's own failures: less compute and a stronger student.",
+    "condition": "Students from 7B to 72B, code generation and math reasoning; a DPO utility bound derived with a linearized feature model.",
+    "gap": "(Inferred) Only tasks with clear answers are tested, so it is unknown whether this holds for fuzzy preferences such as safety or honesty."
   },
   "source": "manual",
   "provenance": {

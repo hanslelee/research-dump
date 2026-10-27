@@ -23,9 +23,9 @@
     ]
   },
   "summary": {
-    "claim": "거절 steering을 학습 문제로 보고, 무해한 입력에는 null space 제약으로 거의 0인 벡터를, 악의적 입력에는 선형 회귀로 거절 방향을 학습하는 AlphaSteer가 과잉 거절 없이 안전성을 높인다.",
-    "condition": "activation steering, 여러 jailbreak 공격과 일반 성능 벤치마크.",
-    "gap": "(추론) 무해/악의 구분이 학습된 null space에 달려 있어, 학습 분포 밖의 새 공격에서 얼마나 유지되는지는 열려 있다."
+    "claim": "AlphaSteer learns refusal steering: a near-zero vector constrained to the null space for benign inputs and a refusal direction learned by linear regression for malicious inputs, improving safety without over-refusal.",
+    "condition": "Activation steering; several jailbreak attacks and general-utility benchmarks.",
+    "gap": "(Inferred) The benign/malicious split depends on the learned null space, so robustness to new attacks outside the training distribution is open."
   },
   "source": "manual",
   "provenance": {

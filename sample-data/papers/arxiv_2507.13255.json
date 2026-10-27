@@ -23,9 +23,9 @@
     ]
   },
   "summary": {
-    "claim": "안전 인식 점수로 고른 layer에서 MLP probe가 유해성을 판정하고, 유해하다고 판단될 때만 거절 쪽으로 steering하는 AutoSteer가 재학습 없이 멀티모달 공격 성공률을 크게 낮춘다.",
-    "condition": "LLaVA-OV와 Chameleon, VLSafe와 ToViLaG+로 평가. LLaVA-OV에서 VLSafe ASR 60.0% → 4.2%, 일반 성능 유지.",
-    "gap": "(저자) probe가 분포 밖 공격에 약할 수 있고, 두 모델에서만 실험했으며, steering 강도와 ASR의 관계가 비선형이다."
+    "claim": "AutoSteer uses an MLP probe on a layer chosen by a safety-awareness score to detect toxicity, and steers toward refusal only when toxicity is detected, sharply lowering multimodal attack success without retraining.",
+    "condition": "LLaVA-OV and Chameleon on VLSafe and ToViLaG+; VLSafe ASR on LLaVA-OV 60.0% → 4.2% with general performance kept.",
+    "gap": "(Authors) The probe may be weak on out-of-distribution attacks, only two models are tested, and ASR responds non-linearly to steering strength."
   },
   "source": "manual",
   "provenance": {

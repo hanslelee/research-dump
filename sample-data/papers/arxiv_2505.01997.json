@@ -23,9 +23,9 @@
     ]
   },
   "summary": {
-    "claim": "선호 정렬이 LLM을 과신하게 만들고, 그 원인 중 하나는 preference collapse다. ECE 기준으로 calibration 가능 구간에서는 calibration-aware 미세조정으로, 불가능 구간에서는 EM 기반 ECE 정규화로 calibration을 되살린다.",
-    "condition": "선호 정렬된 LLM을 도메인 지식으로 추가 미세조정하는 설정. 확신은 모델 출력 확률 기준.",
-    "gap": "(추론) 말로 표현한 확신(verbalized confidence)이나 사용자 반박 상황에서의 확신 변화는 다루지 않았다."
+    "claim": "Preference alignment makes LLMs overconfident, partly through preference collapse. Calibration-aware fine-tuning restores calibration in the calibratable regime, and an EM-based ECE regularizer does so in the non-calibratable regime.",
+    "condition": "Preference-aligned LLMs further fine-tuned on domain knowledge; confidence measured from output probabilities.",
+    "gap": "(Inferred) Verbalized confidence and how confidence shifts under user pushback are not studied."
   },
   "source": "manual",
   "provenance": {

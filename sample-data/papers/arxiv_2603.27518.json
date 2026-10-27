@@ -22,9 +22,9 @@
     ]
   },
   "summary": {
-    "claim": "과잉 거절 방향은 과제마다 다르고 고차원인 반면 유해 거절 방향은 과제와 무관한 하나의 방향이라, 전역 거절 방향을 제거하면 과잉 거절은 우연히만 줄고 거절 메커니즘이 망가진다. 과제별 기하 개입이 필요하다.",
-    "condition": "정렬된 언어 모델의 hidden state 기하 분석과 linear probing. 두 거절은 초기 layer부터 표현이 구분된다.",
-    "gap": "(추론) 초록에 모델과 데이터셋이 없고, 제안한 과제별 개입을 실제로 구현해 검증했는지는 분명하지 않다."
+    "claim": "Over-refusal directions are task-dependent and high-dimensional, while harmful-refusal is a single task-agnostic direction. Ablating the global refusal direction reduces over-refusal only by accident and breaks the refusal mechanism, so task-specific geometric interventions are needed.",
+    "condition": "Geometry analysis and linear probing of hidden states in aligned language models; the two refusal types separate from early layers.",
+    "gap": "(Inferred) The abstract names no models or datasets, and it is unclear whether a task-specific intervention was built and tested."
   },
   "source": "manual",
   "provenance": {

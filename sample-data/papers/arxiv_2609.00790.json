@@ -22,9 +22,9 @@
     ]
   },
   "summary": {
-    "claim": "처음 응답을 먼저 검사하고 거절 오류가 있을 때만 고치는 RISA가 기본 모델을 바꾸지 않고 거절 신뢰도를 높이면서 유용성을 대부분 지킨다.",
-    "condition": "규칙 기반 점수와, 프롬프트의 마지막 layer hidden state를 읽는 calibrated linear probe 점수를 결합. 기본 모델마다 임계값 보정.",
-    "gap": "(추론) 모델마다 probe와 임계값을 다시 보정해야 하고, probe가 틀리는 경우의 비용은 초록에 나오지 않는다."
+    "claim": "RISA checks the initial response first and corrects refusal errors only when needed, improving refusal reliability without changing the base model and keeping most of its usefulness.",
+    "condition": "Rule-based scores combined with a calibrated linear probe on the prompt's final-layer hidden state; thresholds calibrated per base model.",
+    "gap": "(Inferred) The probe and thresholds must be recalibrated for each model, and the cost of probe errors is not given in the abstract."
   },
   "source": "manual",
   "provenance": {

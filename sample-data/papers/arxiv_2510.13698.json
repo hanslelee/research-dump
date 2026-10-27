@@ -21,9 +21,9 @@
     ]
   },
   "summary": {
-    "claim": "이미지에 숨긴 유해 의도에 MLLM이 취약한 이유 중 하나는 안전에 중요한 이미지 영역에 attention이 덜 가기 때문이다. 이를 보강해 위험을 추정하고 거절 쪽으로 적응적으로 steering하는 MoRAS를 제안한다.",
-    "condition": "추론 시점 방어, 추가 생성 없이 작은 calibration 세트만 사용. 여러 MLLM과 벤치마크.",
-    "gap": "(추론) calibration 세트가 얼마나 대표성이 있어야 하는지, 새로운 형태의 멀티모달 jailbreak에 일반화되는지는 열려 있다."
+    "claim": "MLLMs are vulnerable to harmful intent hidden in images partly because they pay too little attention to safety-critical image regions. MoRAS strengthens that attention, estimates risk, and adaptively steers toward refusal.",
+    "condition": "Inference-time defense with no extra generation and only a small calibration set; several MLLMs and benchmarks.",
+    "gap": "(Inferred) How representative the calibration set must be, and generalization to new kinds of multimodal jailbreaks, are open."
   },
   "source": "manual",
   "provenance": {

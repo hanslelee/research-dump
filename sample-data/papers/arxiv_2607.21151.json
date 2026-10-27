@@ -23,9 +23,9 @@
     ]
   },
   "summary": {
-    "claim": "Video LLM은 유해 영상에 무해한 질문이 붙을 때 더 취약하다. 내용은 81% 이상 알아보지만 거절과 연결이 끊긴 것으로, 시각 이해가 텍스트 이해보다 약한 거절 경향을 만든다.",
-    "condition": "Video LLM 6개, 공개 벤치마크 3개. 행동, 이해, 내부 표현 세 수준 진단. 프롬프트 주입으로 ASR 평균 48.24%p 감소.",
-    "gap": "(추론) 완화책이 프롬프트 주입이라, 내부 표현 수준에서 이해와 거절을 다시 잇는 방법은 다루지 않았다."
+    "claim": "Video LLMs are more vulnerable when a harmful video comes with a benign question. They recognize the content over 81% of the time, but recognition is decoupled from refusal: visual understanding triggers a weaker refusal tendency than text.",
+    "condition": "Six Video LLMs, three public benchmarks; diagnosis at behavior, understanding and representation levels; prompt injection cuts ASR by 48.24 points on average.",
+    "gap": "(Inferred) The fix is a prompt injection; reconnecting understanding and refusal at the representation level is not addressed."
   },
   "source": "manual",
   "provenance": {

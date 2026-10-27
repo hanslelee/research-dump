@@ -23,9 +23,9 @@
     ]
   },
   "summary": {
-    "claim": "표준 RLHF의 KL 정규화가 선호를 왜곡해 극단적으로는 소수 선호를 거의 무시하는 preference collapse를 일으킨다. 보상 모델이 함의하는 선호 분포에 응답 분포를 맞추는 PM RLHF가 이를 고친다.",
-    "condition": "Bradley-Terry-Luce/Plackett-Luce 선호 모델 가정. OPT와 Llama 계열 실험, 표준 RLHF 대비 29~41% 개선.",
-    "gap": "(추론) 선호 분포를 맞추는 것이 확신 표현이나 calibration에 어떤 영향을 주는지는 다루지 않았다."
+    "claim": "The KL regularization in standard RLHF distorts preferences and, in the extreme, causes preference collapse that nearly ignores minority preferences. PM RLHF fixes this by matching the response distribution to the preference distribution implied by the reward model.",
+    "condition": "Bradley-Terry-Luce/Plackett-Luce preference model assumed; OPT and Llama experiments, 29–41% better than standard RLHF.",
+    "gap": "(Inferred) The effect of preference matching on expressed confidence or calibration is not studied."
   },
   "source": "manual",
   "provenance": {

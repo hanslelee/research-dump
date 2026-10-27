@@ -21,9 +21,9 @@
     ]
   },
   "summary": {
-    "claim": "오프라인 선호 데이터와 변하는 정책 사이의 분포 불일치를, 메타 학습기로 온라인 샘플링이 필요한 곳을 추정하고 샘플별 가중치를 주는 MetaAPO로 줄인다. 온라인 라벨링 비용을 42% 줄였다.",
-    "condition": "AlpacaEval 2, Arena-Hard, MT-Bench로 평가.",
-    "gap": "(추론) 초록에 기반 모델과 데이터셋이 없고, 안전 정렬에서의 효과는 보고하지 않았다."
+    "claim": "MetaAPO reduces the mismatch between offline preference data and the evolving policy: a meta-learner estimates where online sampling helps and gives per-sample weights. Online annotation cost drops by 42%.",
+    "condition": "Evaluated on AlpacaEval 2, Arena-Hard and MT-Bench.",
+    "gap": "(Inferred) The abstract names no base models or datasets, and no effect on safety alignment is reported."
   },
   "source": "manual",
   "provenance": {

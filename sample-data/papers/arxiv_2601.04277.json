@@ -21,9 +21,9 @@
     ]
   },
   "summary": {
-    "claim": "사후 학습 모델의 과신은 최종 확신만 오르는 confidence drift와 중간 추론 경로가 달라지는 process drift 두 가지에서 온다. 사전학습 모델에 맞춰 둘을 함께 고치는 비지도 Dual-Align을 제안한다.",
-    "condition": "사후 학습 LLM과 그 사전학습 모델 쌍. 온도 파라미터 하나만 학습하는 사후 보정.",
-    "gap": "(추론) 사전학습 모델이 있어야 하므로, 사전학습 체크포인트가 공개되지 않은 모델에는 쓰기 어렵다."
+    "claim": "Overconfidence in post-trained models comes from confidence drift (only final confidence rises) and process drift (intermediate inference paths diverge). Dual-Align, an unsupervised method, fixes both against the pretrained model.",
+    "condition": "Pairs of post-trained LLMs and their pretrained models; post-hoc correction that learns a single temperature parameter.",
+    "gap": "(Inferred) It needs the pretrained model, so it is hard to use when the pretrained checkpoint is not released."
   },
   "source": "manual",
   "provenance": {
