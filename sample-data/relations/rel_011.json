@@ -1,11 +1,11 @@
 {
   "id": "rel:011",
-  "from": "arxiv:2601.04277",
+  "from": "arxiv:2609.38987",
   "to": "claim:002",
   "layer": "0-1",
-  "type": "unrelated",
-  "reason": "[DEMO] Calibration, not preference data.",
-  "status": "rejected",
+  "type": "support",
+  "reason": "Bad examples from smaller models trained better students than the student's own mistakes.",
+  "status": "new",
   "model": "manual",
   "created_at": "2026-10-14"
 }

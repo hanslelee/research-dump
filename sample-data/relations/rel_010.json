@@ -1,11 +1,11 @@
 {
   "id": "rel:010",
-  "from": "arxiv:2609.38987",
+  "from": "arxiv:2502.16825",
   "to": "claim:002",
   "layer": "0-1",
-  "type": "duplicate",
-  "reason": "[DEMO] May already answer the claim directly; check before going further.",
-  "status": "new",
+  "type": "narrow",
+  "reason": "Which bad examples you pick matters, not how many you have.",
+  "status": "approved",
   "model": "manual",
   "created_at": "2026-10-14"
 }

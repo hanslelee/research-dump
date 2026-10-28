@@ -1,9 +1,12 @@
 {
   "id": "claim:001",
-  "text": "[DEMO] Refusal steering learned on text transfers to VLMs without raising over-refusal",
+  "text": "Images are an easier way to jailbreak AI than text.",
   "status": "candidate",
   "version": 1,
   "history": [],
+  "basis": "AI models often recognize a harmful image but still answer, and they pay less attention to the risky part of an image than to risky words. Nobody has compared the same harmful request sent as text and as an image on the same models.",
   "experiments": [],
-  "memo": ""
+  "memo": "",
+  "origin": "manual",
+  "created_at": "2026-10-14"
 }

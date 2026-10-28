@@ -3,8 +3,8 @@
   "from": "arxiv:2510.13698",
   "to": "claim:001",
   "layer": "0-1",
-  "type": "narrow",
-  "reason": "[DEMO] Visual risk is missed by attention, so transfer needs risk-aware steering.",
+  "type": "support",
+  "reason": "AI pays too little attention to the risky part of an image.",
   "status": "approved",
   "model": "manual",
   "created_at": "2026-10-14"

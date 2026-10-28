@@ -1,24 +1,27 @@
 {
   "id": "claim:002",
-  "text": "[DEMO] Which rejected responses enter the preference data matters more for safety DPO than how many there are",
+  "text": "More training data is not always safer.",
   "status": "active",
   "version": 2,
   "history": [
     {
       "version": 1,
-      "text": "[DEMO] More preference data improves safety DPO",
+      "text": "More training data makes AI safer.",
       "changed_at": "2026-10-14",
-      "reason": "[DEMO] narrowed by More is Less"
+      "reason": "More is Less showed that adding data from other models made jailbreaks easier."
     }
   ],
+  "basis": "Several papers find that which examples go into preference training matters more than how many. The open question is when extra data starts to hurt safety.",
   "experiments": [
     {
-      "title": "[DEMO] placeholder",
+      "title": "Train the same model with 1x, 2x and 4x preference data and measure jailbreak success",
       "date": "",
       "setup": "Sample data only. Real experiments stay in the private data repository.",
       "result": "",
       "status": "plan"
     }
   ],
-  "memo": ""
+  "memo": "",
+  "origin": "manual",
+  "created_at": "2026-10-14"
 }
